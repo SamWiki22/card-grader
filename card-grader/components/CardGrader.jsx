@@ -73,15 +73,21 @@ function parseResponse(text) {
   return { score: m ? Math.min(10, Math.max(1, parseFloat(m[1]))) : 7, verdict: text.slice(0, 150), defects: [] };
 }
 
-async function toJpegBase64(dataUrl) {
+async function toJpegBase64(dataUrl, maxDim = 1800) {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => {
+      let w = img.naturalWidth, h = img.naturalHeight;
+      if (w > maxDim || h > maxDim) {
+        const ratio = Math.min(maxDim / w, maxDim / h);
+        w = Math.round(w * ratio);
+        h = Math.round(h * ratio);
+      }
       const canvas = document.createElement("canvas");
-      canvas.width = img.naturalWidth;
-      canvas.height = img.naturalHeight;
-      canvas.getContext("2d").drawImage(img, 0, 0);
-      resolve(canvas.toDataURL("image/jpeg", 0.95).split(",")[1]);
+      canvas.width = w;
+      canvas.height = h;
+      canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL("image/jpeg", 0.92).split(",")[1]);
     };
     img.onerror = reject;
     img.src = dataUrl;
