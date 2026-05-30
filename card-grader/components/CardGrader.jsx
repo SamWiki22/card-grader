@@ -5,7 +5,7 @@ const WEIGHTS = { centering: 0.20, corners: 0.30, edges: 0.25, surface: 0.25 };
 const COMPANIES = {
   BGS: { name: "Beckett BGS", color: "#FFD700", tiers: [
     { min: 9.50, short: "BLACK LABEL", color: "#FFD700", badge: "🏆", likely: "BGS 10 Black Label", verdict: "Near-perfect across all subgrades. BGS Black Label 10 candidate — rarest result in the hobby." },
-    { min: 9.00, short: "PRISTINE",    color: "#E8E8E8", badge: "💎", likely: "BGS 10 Pristine",    verdict: "Exceptional quality. Strong BGS Pristine 10 candidate." },
+    { min: 9.20, short: "PRISTINE",    color: "#E8E8E8", badge: "💎", likely: "BGS 10 Pristine",    verdict: "Exceptional quality. Strong BGS Pristine 10 candidate." },
     { min: 8.50, short: "GEM MINT",    color: "#64B5F6", badge: "⭐", likely: "BGS 9.5 Gem Mint",   verdict: "Very strong card. Likely BGS 9.5 Gem Mint — BGS grades tough." },
     { min: 8.00, short: "NM-MT",       color: "#81C784", badge: "✅", likely: "BGS 8–8.5",          verdict: "Solid card with minor flaws. Likely BGS 8 or 8.5." },
     { min: 7.00, short: "NEAR MINT",   color: "#FFB74D", badge: "📋", likely: "BGS 7–7.5",          verdict: "Noticeable wear. Likely BGS 7–7.5." },
@@ -28,11 +28,11 @@ const COMPANIES = {
     { min: 0,    short: "BELOW NM",   color: "#EF5350", badge: "⚠️", likely: "SGC 6 or lower",   verdict: "Significant defects. SGC 6 or lower." },
   ]},
   TAG: { name: "TAG", color: "#43A047", tiers: [
-    { min: 8.90, short: "PERFECT 10",   color: "#FFD700", badge: "🏆", likely: "TAG 10 Perfect",   verdict: "Strong TAG 10 candidate — TAG graded softer than BGS and has since suspended grading services." },
-    { min: 8.50, short: "GEM MINT 9.5", color: "#E8E8E8", badge: "💎", likely: "TAG 9.5 Gem Mint", verdict: "Very strong card. Likely TAG 9.5 Gem Mint." },
-    { min: 8.00, short: "MINT 9",       color: "#64B5F6", badge: "⭐", likely: "TAG 9 Mint",       verdict: "Good condition. Likely TAG 9 Mint." },
-    { min: 7.40, short: "NM-MT 8.5",    color: "#81C784", badge: "✅", likely: "TAG 8–8.5",        verdict: "Solid with minor wear. Likely TAG 8 or 8.5." },
-    { min: 6.70, short: "NEAR MINT",    color: "#FFB74D", badge: "📋", likely: "TAG 7–7.5",        verdict: "Noticeable wear. Likely TAG 7–7.5." },
+    { min: 9.30, short: "PERFECT 10",   color: "#FFD700", badge: "🏆", likely: "TAG 10 Perfect",   verdict: "Near-flawless. Strong TAG 10 Perfect candidate." },
+    { min: 8.80, short: "GEM MINT 9.5", color: "#E8E8E8", badge: "💎", likely: "TAG 9.5 Gem Mint", verdict: "Exceptional card. Likely TAG 9.5 Gem Mint." },
+    { min: 8.30, short: "MINT 9",       color: "#64B5F6", badge: "⭐", likely: "TAG 9 Mint",       verdict: "Very strong card. Likely TAG 9 Mint." },
+    { min: 7.70, short: "NM-MT 8.5",    color: "#81C784", badge: "✅", likely: "TAG 8–8.5",        verdict: "Solid with minor wear. Likely TAG 8 or 8.5." },
+    { min: 6.80, short: "NEAR MINT",    color: "#FFB74D", badge: "📋", likely: "TAG 7–7.5",        verdict: "Noticeable wear. Likely TAG 7–7.5." },
     { min: 0,    short: "BELOW NM",     color: "#EF5350", badge: "⚠️", likely: "TAG 6 or lower",   verdict: "Significant defects." },
   ]},
   CGC: { name: "CGC", color: "#AB47BC", tiers: [
