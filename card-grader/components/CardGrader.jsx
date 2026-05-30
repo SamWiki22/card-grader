@@ -29,7 +29,7 @@ const COMPANIES = {
   ]},
   TAG: { name: "TAG", color: "#43A047", tiers: [
     { min: 9.50, short: "PRISTINE 10", color: "#FFD700", badge: "🏆", likely: "TAG 10 Pristine",  verdict: "Near-perfect. TAG Pristine 10 is extremely rare — comparable difficulty to BGS Pristine." },
-    { min: 9.20, short: "GEM MINT 10", color: "#E8E8E8", badge: "💎", likely: "TAG 10 Gem Mint",  verdict: "Exceptional card. TAG 10 Gem Mint — the standard top grade most collectors receive from TAG." },
+    { min: 9.10, short: "GEM MINT 10", color: "#E8E8E8", badge: "💎", likely: "TAG 10 Gem Mint",  verdict: "Exceptional card. TAG 10 Gem Mint — the standard top grade most collectors receive from TAG." },
     { min: 8.60, short: "MINT 9",      color: "#64B5F6", badge: "⭐", likely: "TAG 9 Mint",       verdict: "Very strong card. Likely TAG 9 Mint. Note: TAG has no 9.5 grade — it goes 10 to 9." },
     { min: 8.00, short: "NM-MT+ 8.5",  color: "#81C784", badge: "✅", likely: "TAG 8.5 NM-MT+",  verdict: "Solid card with minor wear. Likely TAG 8.5 NM-MT+." },
     { min: 7.20, short: "NM-MT 8",     color: "#FFB74D", badge: "📋", likely: "TAG 8 NM-MT",      verdict: "Noticeable wear. Likely TAG 8 NM-MT." },
