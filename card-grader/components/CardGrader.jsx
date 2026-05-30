@@ -47,6 +47,17 @@ const COMPANIES = {
       { min: 0,    short: "BELOW NM",    color: "#EF5350", badge: "⚠️", likely: "TAG 6 or lower",    verdict: "Significant defects. Not a premium grade candidate." },
     ],
   },
+  CGC: {
+    name: "CGC", color: "#AB47BC",
+    tiers: [
+      { min: 9.70, short: "PRISTINE 10", color: "#FFD700", badge: "🏆", likely: "CGC 10 Pristine",   verdict: "Flawless card. Strong CGC 10 Pristine candidate." },
+      { min: 9.20, short: "GEM MINT 9.5",color: "#E8E8E8", badge: "💎", likely: "CGC 9.5 Gem Mint",  verdict: "Exceptional quality. Likely CGC 9.5 Gem Mint." },
+      { min: 8.80, short: "MINT 9",      color: "#64B5F6", badge: "⭐", likely: "CGC 9 Mint",        verdict: "Very strong card. Likely CGC 9 Mint." },
+      { min: 8.20, short: "NM/MT+ 8.5",  color: "#81C784", badge: "✅", likely: "CGC 8.5 NM/MT+",   verdict: "Solid card with minor flaws. Likely CGC 8.5." },
+      { min: 7.50, short: "NM/MT 8",     color: "#FFB74D", badge: "📋", likely: "CGC 7.5–8",         verdict: "Noticeable wear in at least one area. Likely CGC 7.5–8." },
+      { min: 0,    short: "BELOW NM",    color: "#EF5350", badge: "⚠️", likely: "CGC 7 or lower",    verdict: "Significant defects found. CGC 7 or lower." },
+    ],
+  },
 };
 
 const CATEGORIES = [
@@ -379,18 +390,4 @@ export default function CardGrader() {
                 </div>
               </div>
               <div>
-                <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: tier.color, letterSpacing: 1 }}>{tier.badge} {tier.short}</div>
-                <div style={{ fontSize: 12, color: "rgba(255,255,255,0.5)", lineHeight: 1.5, marginBottom: 8 }}>{tier.verdict}</div>
-                <span style={{ fontSize: 11, padding: "4px 12px", background: `${tier.color}18`, border: `1px solid ${tier.color}40`, borderRadius: 20, color: tier.color }}>Predicted: {tier.likely}</span>
-              </div>
-            </div>
-          </div>
-          <SharePanel pgScore={pgScore} tier={tier} scores={rawScores} cardName={cardName} preview={preview} company={company} />
-        </div>
-      )}
-
-      <input ref={cameraRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={e => { if (e.target.files?.[0]) { analyze(e.target.files[0]); e.target.value = ""; } }} />
-      <input ref={galleryRef} type="file" accept="image/*" style={{ display: "none" }} onChange={e => { if (e.target.files?.[0]) { analyze(e.target.files[0]); e.target.value = ""; } }} />
-    </div>
-  );
-}
+                <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, colo
