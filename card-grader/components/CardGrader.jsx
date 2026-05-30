@@ -6,7 +6,7 @@ const COMPANIES = {
   BGS: { name: "Beckett BGS", color: "#FFD700", tiers: [
     { min: 9.50, short: "BLACK LABEL", color: "#FFD700", badge: "🏆", likely: "BGS 10 Black Label", verdict: "Near-perfect across all subgrades. BGS Black Label 10 candidate — rarest result in the hobby." },
     { min: 9.20, short: "PRISTINE",    color: "#E8E8E8", badge: "💎", likely: "BGS 10 Pristine",    verdict: "Exceptional quality. Strong BGS Pristine 10 candidate." },
-    { min: 8.50, short: "GEM MINT",    color: "#64B5F6", badge: "⭐", likely: "BGS 9.5 Gem Mint",   verdict: "Very strong card. Likely BGS 9.5 Gem Mint — BGS grades tough." },
+    { min: 8.50, short: "GEM MINT",    color: "#64B5F6", badge: "⭐", likely: "BGS 9.5 Gem Mint",   verdict: "Very strong card. Likely BGS 9.5 Gem Mint." },
     { min: 8.00, short: "NM-MT",       color: "#81C784", badge: "✅", likely: "BGS 8–8.5",          verdict: "Solid card with minor flaws. Likely BGS 8 or 8.5." },
     { min: 7.00, short: "NEAR MINT",   color: "#FFB74D", badge: "📋", likely: "BGS 7–7.5",          verdict: "Noticeable wear. Likely BGS 7–7.5." },
     { min: 0,    short: "BELOW NM",    color: "#EF5350", badge: "⚠️", likely: "BGS 6 or lower",     verdict: "Significant defects. Not a premium grade candidate." },
@@ -20,24 +20,24 @@ const COMPANIES = {
     { min: 0,    short: "BELOW EX",  color: "#EF5350", badge: "⚠️", likely: "PSA 4 or lower",  verdict: "Significant wear or defects. PSA 4 or lower." },
   ]},
   SGC: { name: "SGC", color: "#1E88E5", tiers: [
-    { min: 8.70, short: "PRISTINE 10", color: "#FFD700", badge: "🏆", likely: "SGC 10 Pristine", verdict: "SGC grades generously — this score is a strong SGC 10 Pristine candidate." },
-    { min: 8.30, short: "MINT+ 9.5",  color: "#E8E8E8", badge: "💎", likely: "SGC 9.5 Mint+",   verdict: "Very strong card. Likely SGC 9.5 Mint+ — SGC is one of the more collector-friendly graders." },
+    { min: 8.70, short: "PRISTINE 10", color: "#FFD700", badge: "🏆", likely: "SGC 10 Pristine", verdict: "Near-flawless. Strong SGC 10 Pristine candidate." },
+    { min: 8.30, short: "MINT+ 9.5",  color: "#E8E8E8", badge: "💎", likely: "SGC 9.5 Mint+",   verdict: "Very strong card. Likely SGC 9.5 Mint+." },
     { min: 7.80, short: "MINT 9",     color: "#64B5F6", badge: "⭐", likely: "SGC 9 Mint",       verdict: "Good condition. Likely SGC 9 Mint." },
     { min: 7.20, short: "NM-MT 8",    color: "#81C784", badge: "✅", likely: "SGC 8–8.5",        verdict: "Solid card. Likely SGC 8 or 8.5." },
     { min: 6.50, short: "NM 7",       color: "#FFB74D", badge: "📋", likely: "SGC 7–7.5",        verdict: "Noticeable wear. Likely SGC 7–7.5." },
     { min: 0,    short: "BELOW NM",   color: "#EF5350", badge: "⚠️", likely: "SGC 6 or lower",   verdict: "Significant defects. SGC 6 or lower." },
   ]},
   TAG: { name: "TAG", color: "#43A047", tiers: [
-    { min: 9.50, short: "PRISTINE 10", color: "#FFD700", badge: "🏆", likely: "TAG 10 Pristine",  verdict: "Near-perfect. TAG Pristine 10 is extremely rare — comparable difficulty to BGS Pristine." },
-    { min: 9.10, short: "GEM MINT 10", color: "#E8E8E8", badge: "💎", likely: "TAG 10 Gem Mint",  verdict: "Exceptional card. TAG 10 Gem Mint — the standard top grade most collectors receive from TAG." },
-    { min: 8.60, short: "MINT 9",      color: "#64B5F6", badge: "⭐", likely: "TAG 9 Mint",       verdict: "Very strong card. Likely TAG 9 Mint. Note: TAG has no 9.5 grade — it goes 10 to 9." },
+    { min: 9.50, short: "PRISTINE 10", color: "#FFD700", badge: "🏆", likely: "TAG 10 Pristine",  verdict: "Near-perfect. Strong TAG 10 Pristine candidate." },
+    { min: 9.10, short: "GEM MINT 10", color: "#E8E8E8", badge: "💎", likely: "TAG 10 Gem Mint",  verdict: "Exceptional card. Strong TAG 10 Gem Mint candidate." },
+    { min: 8.60, short: "MINT 9",      color: "#64B5F6", badge: "⭐", likely: "TAG 9 Mint",       verdict: "Very strong card. Likely TAG 9 Mint." },
     { min: 8.00, short: "NM-MT+ 8.5",  color: "#81C784", badge: "✅", likely: "TAG 8.5 NM-MT+",  verdict: "Solid card with minor wear. Likely TAG 8.5 NM-MT+." },
     { min: 7.20, short: "NM-MT 8",     color: "#FFB74D", badge: "📋", likely: "TAG 8 NM-MT",      verdict: "Noticeable wear. Likely TAG 8 NM-MT." },
     { min: 0,    short: "BELOW NM",    color: "#EF5350", badge: "⚠️", likely: "TAG 7.5 or lower", verdict: "Significant defects. Likely TAG 7.5 or lower." },
   ]},
   CGC: { name: "CGC", color: "#AB47BC", tiers: [
-    { min: 9.20, short: "PRISTINE 10",  color: "#FFD700", badge: "🏆", likely: "CGC 10 Pristine",   verdict: "Virtually flawless under magnification. CGC Pristine 10 is difficult to achieve — strong candidate at this score." },
-    { min: 8.60, short: "GEM MINT 10",  color: "#E8E8E8", badge: "💎", likely: "CGC 10 Gem Mint",   verdict: "Exceptional card. CGC 10 Gem Mint — the standard top grade most collectors receive from CGC." },
+    { min: 9.20, short: "PRISTINE 10",  color: "#FFD700", badge: "🏆", likely: "CGC 10 Pristine",   verdict: "Near-flawless. Strong CGC 10 Pristine candidate." },
+    { min: 8.60, short: "GEM MINT 10",  color: "#E8E8E8", badge: "💎", likely: "CGC 10 Gem Mint",   verdict: "Exceptional card. Strong CGC 10 Gem Mint candidate." },
     { min: 8.10, short: "MINT+ 9.5",    color: "#64B5F6", badge: "⭐", likely: "CGC 9.5 Mint+",    verdict: "Very strong card with premium eye appeal. Likely CGC 9.5 Mint+." },
     { min: 7.50, short: "MINT 9",       color: "#81C784", badge: "✅", likely: "CGC 9 Mint",        verdict: "Sharp corners with only minor wear. Likely CGC 9 Mint." },
     { min: 6.70, short: "NM/MINT 8.5",  color: "#FFB74D", badge: "📋", likely: "CGC 8–8.5",        verdict: "Minor wear visible. Likely CGC 8 or 8.5." },
@@ -69,8 +69,8 @@ function getTier(score, company, cardGame) {
   // PSA grades Pokémon stricter due to high population counts — shift top thresholds up
   if (company === "PSA" && cardGame === "pokemon") {
     tiers = [
-      { ...tiers[0], min: 9.40, verdict: "Excellent condition. Strong PSA 10 candidate — note PSA grades Pokémon strictly due to high pop counts. Real-world result may vary." },
-      { ...tiers[1], min: 8.90, verdict: "Very strong card. Likely PSA 9 Mint for Pokémon — PSA holds a higher bar for this TCG." },
+      { ...tiers[0], min: 9.40, verdict: "Excellent condition. Strong PSA 10 Gem Mint candidate." },
+      { ...tiers[1], min: 8.90, verdict: "Very strong card. Likely PSA 9 Mint." },
       { ...tiers[2], min: 7.90 },
       ...tiers.slice(3),
     ];
@@ -579,11 +579,6 @@ export default function CardGrader() {
                 </button>
               ))}
             </div>
-            {cardGame === "pokemon" && (
-              <div style={{ fontFamily:"'DM Mono',monospace", fontSize:9, color:"rgba(255,215,0,0.3)", marginTop:7, lineHeight:1.6, letterSpacing:0.3 }}>
-                PSA thresholds tightened for Pokémon — high pop counts mean stricter real-world grades.
-              </div>
-            )}
           </div>
 
           {/* ── UPLOAD ZONE ── */}
