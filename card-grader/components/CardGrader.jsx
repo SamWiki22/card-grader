@@ -2,44 +2,63 @@ import { useState, useRef, useCallback } from "react";
 
 const WEIGHTS = { centering: 0.20, corners: 0.30, edges: 0.25, surface: 0.25 };
 
-const PG_TIERS = [
-  { min: 9.80, label: "Black Label",    short: "BLACK LABEL", color: "#FFD700", badge: "🏆", likely: "BGS 10 Black Label",  verdict: "Near-perfect card. Extremely likely to achieve BGS 10 Black Label." },
-  { min: 9.40, label: "Pristine 10",    short: "PRISTINE",    color: "#E8E8E8", badge: "💎", likely: "BGS 10 Pristine",     verdict: "Exceptional quality. Strong candidate for BGS Pristine 10." },
-  { min: 9.00, label: "Gem Mint 9.5",   short: "GEM MINT",    color: "#64B5F6", badge: "⭐", likely: "BGS 9.5 Gem Mint",   verdict: "Very strong card. Likely grades BGS 9.5 Gem Mint." },
-  { min: 8.50, label: "Near Mint-Mint", short: "NM-MT",       color: "#81C784", badge: "✅", likely: "BGS 8–8.5",          verdict: "Solid card with minor flaws. Likely BGS 8 or 8.5." },
-  { min: 7.50, label: "Near Mint",      short: "NEAR MINT",   color: "#FFB74D", badge: "📋", likely: "BGS 7–7.5",          verdict: "Noticeable wear in at least one area. Likely BGS 7–7.5." },
-  { min: 0,    label: "Below NM",       short: "BELOW NM",    color: "#EF5350", badge: "⚠️", likely: "BGS 6 or lower",     verdict: "Significant defects found. Not a premium grade candidate." },
-];
+const COMPANIES = {
+  BGS: {
+    name: "Beckett BGS", color: "#FFD700",
+    tiers: [
+      { min: 9.80, short: "BLACK LABEL", color: "#FFD700", badge: "🏆", likely: "BGS 10 Black Label", verdict: "Near-perfect. Extremely likely BGS 10 Black Label." },
+      { min: 9.40, short: "PRISTINE",    color: "#E8E8E8", badge: "💎", likely: "BGS 10 Pristine",    verdict: "Exceptional quality. Strong BGS Pristine 10 candidate." },
+      { min: 9.00, short: "GEM MINT",    color: "#64B5F6", badge: "⭐", likely: "BGS 9.5 Gem Mint",   verdict: "Very strong card. Likely BGS 9.5 Gem Mint." },
+      { min: 8.50, short: "NM-MT",       color: "#81C784", badge: "✅", likely: "BGS 8–8.5",          verdict: "Solid card with minor flaws. Likely BGS 8 or 8.5." },
+      { min: 7.50, short: "NEAR MINT",   color: "#FFB74D", badge: "📋", likely: "BGS 7–7.5",          verdict: "Noticeable wear in at least one area. Likely BGS 7–7.5." },
+      { min: 0,    short: "BELOW NM",    color: "#EF5350", badge: "⚠️", likely: "BGS 6 or lower",     verdict: "Significant defects. Not a premium grade candidate." },
+    ],
+  },
+  PSA: {
+    name: "PSA", color: "#E53935",
+    tiers: [
+      { min: 9.50, short: "GEM MT 10",  color: "#FFD700", badge: "🏆", likely: "PSA 10 Gem Mint",  verdict: "Near-perfect card. Strong PSA 10 candidate." },
+      { min: 9.00, short: "MINT 9",     color: "#E8E8E8", badge: "💎", likely: "PSA 9 Mint",       verdict: "Excellent with minimal flaws. Likely PSA 9." },
+      { min: 8.50, short: "NM-MT 8",    color: "#64B5F6", badge: "⭐", likely: "PSA 8 NM-MT",      verdict: "Very nice card with slight imperfections. Likely PSA 8." },
+      { min: 7.50, short: "NM 7",       color: "#81C784", badge: "✅", likely: "PSA 7 NM",         verdict: "Solid card with minor wear. Likely PSA 7." },
+      { min: 6.50, short: "EX-MT 6",    color: "#FFB74D", badge: "📋", likely: "PSA 5–6",          verdict: "Noticeable wear. Likely PSA 5 or 6." },
+      { min: 0,    short: "BELOW EX",   color: "#EF5350", badge: "⚠️", likely: "PSA 4 or lower",   verdict: "Significant wear or defects. PSA 4 or lower." },
+    ],
+  },
+  SGC: {
+    name: "SGC", color: "#1E88E5",
+    tiers: [
+      { min: 9.70, short: "PRISTINE 10", color: "#FFD700", badge: "🏆", likely: "SGC 10 Pristine", verdict: "Near-flawless. Strong SGC 10 Pristine candidate." },
+      { min: 9.20, short: "MINT+ 9.5",  color: "#E8E8E8", badge: "💎", likely: "SGC 9.5 Mint+",   verdict: "Exceptional quality. Likely SGC 9.5 Mint+." },
+      { min: 8.80, short: "MINT 9",     color: "#64B5F6", badge: "⭐", likely: "SGC 9 Mint",       verdict: "Very strong card. Likely SGC 9 Mint." },
+      { min: 8.00, short: "NM-MT 8",    color: "#81C784", badge: "✅", likely: "SGC 8–8.5",        verdict: "Solid with minor imperfections. Likely SGC 8 or 8.5." },
+      { min: 7.00, short: "NM 7",       color: "#FFB74D", badge: "📋", likely: "SGC 7–7.5",        verdict: "Noticeable wear. Likely SGC 7–7.5." },
+      { min: 0,    short: "BELOW NM",   color: "#EF5350", badge: "⚠️", likely: "SGC 6 or lower",   verdict: "Significant defects. SGC 6 or lower." },
+    ],
+  },
+  TAG: {
+    name: "TAG", color: "#43A047",
+    tiers: [
+      { min: 9.50, short: "PERFECT 10",  color: "#FFD700", badge: "🏆", likely: "TAG 10 Perfect",    verdict: "Near-flawless. Strong TAG 10 candidate." },
+      { min: 9.00, short: "GEM MINT 9.5",color: "#E8E8E8", badge: "💎", likely: "TAG 9.5 Gem Mint",  verdict: "Exceptional card. Likely TAG 9.5 Gem Mint." },
+      { min: 8.50, short: "MINT 9",      color: "#64B5F6", badge: "⭐", likely: "TAG 9 Mint",        verdict: "Very strong card. Likely TAG 9 Mint." },
+      { min: 8.00, short: "NM-MT 8.5",   color: "#81C784", badge: "✅", likely: "TAG 8–8.5",         verdict: "Solid with minor wear. Likely TAG 8 or 8.5." },
+      { min: 7.00, short: "NEAR MINT",   color: "#FFB74D", badge: "📋", likely: "TAG 7–7.5",         verdict: "Noticeable wear. Likely TAG 7–7.5." },
+      { min: 0,    short: "BELOW NM",    color: "#EF5350", badge: "⚠️", likely: "TAG 6 or lower",    verdict: "Significant defects. Not a premium grade candidate." },
+    ],
+  },
+};
 
 const CATEGORIES = [
-  {
-    id: "centering", label: "Centering", icon: "⊞", weight: "20%",
-    tip: "Lay card on white paper. Stand directly above.",
-    instruction: "Full card visible — all 4 borders in frame.",
-    prompt: "You are a professional trading card grader. Analyze this card image for centering. Look at the 4 border widths. Score 10=perfect 50/50, 9.5=55/45, 9=60/40, 8=65/35, 7=70/30 or worse. Respond with ONLY a JSON object: {\"score\":8.5,\"leftRight\":\"52/48\",\"topBottom\":\"50/50\",\"verdict\":\"one sentence\",\"defects\":[]}",
-  },
-  {
-    id: "surface", label: "Surface", icon: "◈", weight: "25%",
-    tip: "Use 2x zoom. Angled light reveals scratches.",
-    instruction: "Macro close-up of card face.",
-    prompt: "You are a professional trading card grader. Analyze this card image for surface defects: scratches, print lines, cloudiness, stains, indentations, gloss loss. Score 10=flawless, 9.5=only under magnification, 9=very minor, 8=minor visible, 7=moderate. Respond with ONLY a JSON object: {\"score\":9.0,\"verdict\":\"one sentence\",\"defects\":[\"defect 1\"]}",
-  },
-  {
-    id: "corners", label: "Corners", icon: "◢", weight: "30%",
-    tip: "Tilt card under direct light to reveal corner wear.",
-    instruction: "All 4 corners or macro of worst corner.",
-    prompt: "You are a professional trading card grader. Analyze this card image for corner condition: fraying, nicks, rounding, creases, ink wear at tips. Score 10=needle sharp all 4, 9.5=one barely off, 9=minor wear 1-2, 8=soft corners, 7=worn/frayed. Respond with ONLY a JSON object: {\"score\":9.5,\"worstCorner\":\"TR\",\"verdict\":\"one sentence\",\"defects\":[\"defect 1\"]}",
-  },
-  {
-    id: "edges", label: "Edges", icon: "▬", weight: "25%",
-    tip: "Hold card edge-on toward light to show chipping.",
-    instruction: "Side-on view of all edges.",
-    prompt: "You are a professional trading card grader. Analyze this card image for edge condition: chipping, nicks, roughness, whitening, dents. Score 10=razor clean, 9.5=only under magnification, 9=minor nicks, 8=visible chipping, 7=moderate. Respond with ONLY a JSON object: {\"score\":9.0,\"worstEdge\":\"Bottom\",\"verdict\":\"one sentence\",\"defects\":[\"defect 1\"]}",
-  },
+  { id: "centering", label: "Centering", icon: "⊞", weight: "20%", prompt: "You are a professional trading card grader. Analyze this card image for centering. Look at the 4 border widths. Score 10=perfect 50/50, 9.5=55/45, 9=60/40, 8=65/35, 7=70/30 or worse. Respond with ONLY a JSON object: {\"score\":8.5,\"leftRight\":\"52/48\",\"topBottom\":\"50/50\",\"verdict\":\"one sentence\",\"defects\":[]}" },
+  { id: "surface",   label: "Surface",   icon: "◈", weight: "25%", prompt: "You are a professional trading card grader. Analyze this card image for surface defects: scratches, print lines, cloudiness, stains, indentations, gloss loss. Score 10=flawless, 9.5=only under magnification, 9=very minor, 8=minor visible, 7=moderate. Respond with ONLY a JSON object: {\"score\":9.0,\"verdict\":\"one sentence\",\"defects\":[\"defect 1\"]}" },
+  { id: "corners",   label: "Corners",   icon: "◢", weight: "30%", prompt: "You are a professional trading card grader. Analyze this card image for corner condition: fraying, nicks, rounding, creases, ink wear at tips. Score 10=needle sharp all 4, 9.5=one barely off, 9=minor wear 1-2, 8=soft corners, 7=worn/frayed. Respond with ONLY a JSON object: {\"score\":9.5,\"worstCorner\":\"TR\",\"verdict\":\"one sentence\",\"defects\":[\"defect 1\"]}" },
+  { id: "edges",     label: "Edges",     icon: "▬", weight: "25%", prompt: "You are a professional trading card grader. Analyze this card image for edge condition: chipping, nicks, roughness, whitening, dents. Score 10=razor clean, 9.5=only under magnification, 9=minor nicks, 8=visible chipping, 7=moderate. Respond with ONLY a JSON object: {\"score\":9.0,\"worstEdge\":\"Bottom\",\"verdict\":\"one sentence\",\"defects\":[\"defect 1\"]}" },
 ];
 
-function getTier(score) {
-  return PG_TIERS.find(t => score >= t.min) || PG_TIERS[PG_TIERS.length - 1];
+function getTier(score, company) {
+  const tiers = COMPANIES[company].tiers;
+  return tiers.find(t => score >= t.min) || tiers[tiers.length - 1];
 }
 
 function calcPGScore(scores) {
@@ -63,8 +82,6 @@ function parseResponse(text) {
           defects: Array.isArray(obj.defects) ? obj.defects.filter(Boolean) : [],
           leftRight: obj.leftRight || null,
           topBottom: obj.topBottom || null,
-          worstCorner: obj.worstCorner || null,
-          worstEdge: obj.worstEdge || null,
         };
       }
     } catch (_) {}
@@ -94,18 +111,32 @@ async function toJpegBase64(dataUrl, maxDim = 1800) {
   });
 }
 
-function buildShareText(pgScore, tier, cardName, scores) {
+async function analyzeCategory(base64, cat) {
+  const resp = await fetch("/api/analyze", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ base64, prompt: cat.prompt }),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error(err.error || "Analysis failed.");
+  }
+  const { text } = await resp.json();
+  return parseResponse(text);
+}
+
+function buildShareText(pgScore, tier, cardName, scores, company) {
   return [
-    "🃏 PRE-GRADE REPORT — " + (cardName || "Trading Card"), "",
-    "📊 PG Score: " + pgScore.toFixed(1) + "/10 " + tier.badge,
-    "🏷️ Prediction: " + tier.likely, "",
+    `🃏 PRE-GRADE REPORT — ${cardName || "Trading Card"}`, "",
+    `📊 PG Score: ${pgScore.toFixed(1)}/10 ${tier.badge}`,
+    `🏷️ Prediction: ${tier.likely}`, "",
     "Subgrades:",
-    "  ⊞ Centering : " + (scores.centering != null ? scores.centering.toFixed(1) : "—") + "/10",
-    "  ◈ Surface   : " + (scores.surface   != null ? scores.surface.toFixed(1)   : "—") + "/10",
-    "  ◢ Corners   : " + (scores.corners   != null ? scores.corners.toFixed(1)   : "—") + "/10",
-    "  ▬ Edges     : " + (scores.edges     != null ? scores.edges.toFixed(1)     : "—") + "/10", "",
-    '"' + tier.verdict + '"', "",
-    "#CardGrading #BGS #Beckett #TradingCards",
+    `  ⊞ Centering : ${scores.centering != null ? scores.centering.toFixed(1) : "—"}/10`,
+    `  ◈ Surface   : ${scores.surface   != null ? scores.surface.toFixed(1)   : "—"}/10`,
+    `  ◢ Corners   : ${scores.corners   != null ? scores.corners.toFixed(1)   : "—"}/10`,
+    `  ▬ Edges     : ${scores.edges     != null ? scores.edges.toFixed(1)     : "—"}/10`, "",
+    `"${tier.verdict}"`, "",
+    `#CardGrading #${company} #TradingCards`,
   ].join("\n");
 }
 
@@ -130,133 +161,11 @@ function MiniBar({ score, color }) {
   );
 }
 
-function CaptureCard({ cat, captured, onCapture }) {
-  const cameraRef = useRef();
-  const galleryRef = useRef();
-  const [preview, setPreview]     = useState(captured?.preview || null);
-  const [analyzing, setAnalyzing] = useState(false);
-  const [result, setResult]       = useState(captured?.result || null);
-  const [error, setError]         = useState(null);
-  const [showMenu, setShowMenu]   = useState(false);
-
-  const sc = result == null ? "#555" : result.score >= 9 ? "#4CAF50" : result.score >= 7.5 ? "#FFD700" : "#EF5350";
-
-  function reset() { setPreview(null); setResult(null); setError(null); setShowMenu(false); }
-
-  const analyze = useCallback(async (file) => {
-    if (!file) return;
-    setError(null);
-    const reader = new FileReader();
-    reader.onerror = () => setError("Could not read file.");
-    reader.onload = async (e) => {
-      const dataUrl = e.target.result;
-      setPreview(dataUrl);
-      setAnalyzing(true);
-      try {
-        const base64 = await toJpegBase64(dataUrl);
-        const resp = await fetch("/api/analyze", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ base64, prompt: cat.prompt }),
-        });
-        if (!resp.ok) {
-          const err = await resp.json().catch(() => ({}));
-          throw new Error(err.error || "Analysis failed.");
-        }
-        const { text } = await resp.json();
-        const parsed = parseResponse(text);
-        setResult(parsed);
-        onCapture({ preview: dataUrl, result: parsed });
-      } catch (err) {
-        setError(err.message || "Analysis failed.");
-      } finally {
-        setAnalyzing(false);
-      }
-    };
-    reader.readAsDataURL(file);
-  }, [cat, onCapture]);
-
-  return (
-    <div style={{ background: "rgba(255,255,255,0.025)", border: `1px solid ${result != null ? sc + "44" : "rgba(255,255,255,0.07)"}`, borderRadius: 14, padding: 16, position: "relative", marginBottom: 14 }}>
-      <div style={{ position: "absolute", top: 12, right: 12, fontSize: 9, letterSpacing: 1, color: "rgba(255,255,255,0.25)", background: "rgba(255,255,255,0.05)", borderRadius: 4, padding: "2px 6px" }}>{cat.weight} WEIGHT</div>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-        <span style={{ fontSize: 22 }}>{cat.icon}</span>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, letterSpacing: 2 }}>{cat.label}</div>
-          <div style={{ fontSize: 10, color: "rgba(255,255,255,0.35)" }}>{cat.instruction}</div>
-        </div>
-        {result != null && (
-          <div style={{ textAlign: "right", marginRight: 44 }}>
-            <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: sc }}>{result.score.toFixed(1)}</span>
-            <span style={{ fontSize: 11, color: "rgba(255,255,255,0.3)" }}>/10</span>
-          </div>
-        )}
-      </div>
-
-      {preview == null ? (
-        <div style={{ border: "1.5px dashed rgba(255,215,0,0.2)", borderRadius: 10, padding: "20px 12px", textAlign: "center", background: "rgba(255,215,0,0.015)" }}>
-          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", marginBottom: 12 }}>{cat.label} Photo</div>
-          <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
-            <button onClick={() => cameraRef.current?.click()} style={{ flex: 1, maxWidth: 140, padding: "10px 8px", borderRadius: 9, background: "rgba(255,215,0,0.08)", border: "1px solid rgba(255,215,0,0.3)", color: "#FFD700", fontSize: 12 }}>📷 Camera</button>
-            <button onClick={() => galleryRef.current?.click()} style={{ flex: 1, maxWidth: 140, padding: "10px 8px", borderRadius: 9, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.14)", color: "rgba(255,255,255,0.65)", fontSize: 12 }}>🖼️ Upload</button>
-          </div>
-          <div style={{ fontSize: 10, color: "rgba(255,215,0,0.35)", marginTop: 10 }}>💡 {cat.tip}</div>
-        </div>
-      ) : (
-        <div style={{ position: "relative", borderRadius: 10, overflow: "hidden" }}>
-          <img src={preview} alt="" style={{ width: "100%", maxHeight: 200, objectFit: "cover", display: "block" }} />
-          {analyzing && (
-            <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.78)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10 }}>
-              <div style={{ width: 32, height: 32, border: "3px solid rgba(255,215,0,0.2)", borderTopColor: "#FFD700", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} />
-              <div style={{ fontSize: 10, letterSpacing: 2, color: "rgba(255,255,255,0.6)" }}>ANALYZING</div>
-            </div>
-          )}
-          {!analyzing && !showMenu && (
-            <button onClick={() => setShowMenu(true)} style={{ position: "absolute", top: 7, right: 7, background: "rgba(0,0,0,0.7)", border: "1px solid rgba(255,255,255,0.2)", color: "rgba(255,255,255,0.8)", borderRadius: 6, padding: "3px 10px", fontSize: 10 }}>Replace ▾</button>
-          )}
-          {showMenu && !analyzing && (
-            <div style={{ position: "absolute", top: 7, right: 7, display: "flex", flexDirection: "column", gap: 4 }}>
-              <button onClick={() => { setShowMenu(false); cameraRef.current?.click(); }} style={{ background: "rgba(0,0,0,0.85)", border: "1px solid rgba(255,215,0,0.3)", color: "#FFD700", borderRadius: 6, padding: "4px 10px", fontSize: 10 }}>📷 Camera</button>
-              <button onClick={() => { setShowMenu(false); galleryRef.current?.click(); }} style={{ background: "rgba(0,0,0,0.85)", border: "1px solid rgba(255,255,255,0.2)", color: "rgba(255,255,255,0.7)", borderRadius: 6, padding: "4px 10px", fontSize: 10 }}>🖼️ Upload</button>
-              <button onClick={reset} style={{ background: "rgba(0,0,0,0.85)", border: "1px solid rgba(239,83,80,0.3)", color: "#EF9A9A", borderRadius: 6, padding: "4px 10px", fontSize: 10 }}>✕ Clear</button>
-            </div>
-          )}
-        </div>
-      )}
-
-      {error && <div style={{ color: "#EF5350", fontSize: 11, marginTop: 8, textAlign: "center" }}>{error}</div>}
-
-      {result != null && !analyzing && (
-        <div style={{ marginTop: 10, padding: "10px 12px", background: "rgba(255,255,255,0.03)", borderRadius: 9 }}>
-          <MiniBar score={result.score} color={sc} />
-          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", marginTop: 7, lineHeight: 1.5 }}>{result.verdict}</div>
-          {result.leftRight && (
-            <div style={{ marginTop: 5, fontSize: 10, color: "rgba(255,255,255,0.4)" }}>
-              L/R <span style={{ color: "#FFD700" }}>{result.leftRight}</span>{"  "}
-              T/B <span style={{ color: "#FFD700" }}>{result.topBottom}</span>
-            </div>
-          )}
-          {result.defects?.filter(d => d && d !== "None").length > 0 && (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 7 }}>
-              {result.defects.filter(d => d && d !== "None").map((d, i) => (
-                <span key={i} style={{ fontSize: 9, padding: "2px 7px", background: "rgba(239,83,80,0.12)", border: "1px solid rgba(239,83,80,0.25)", borderRadius: 20, color: "#EF9A9A" }}>{d}</span>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      <input ref={cameraRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={e => { if (e.target.files?.[0]) { analyze(e.target.files[0]); e.target.value = ""; } }} />
-      <input ref={galleryRef} type="file" accept="image/*" style={{ display: "none" }} onChange={e => { if (e.target.files?.[0]) { analyze(e.target.files[0]); e.target.value = ""; } }} />
-    </div>
-  );
-}
-
-function SharePanel({ pgScore, tier, scores, cardName, images }) {
+function SharePanel({ pgScore, tier, scores, cardName, preview, company }) {
   const [copied, setCopied] = useState(false);
   const [platform, setPlatform] = useState("fb");
-  const fullText  = buildShareText(pgScore, tier, cardName, scores);
-  const shortText = `🃏 PG Score: ${pgScore.toFixed(1)}/10 — ${tier.likely} ${tier.badge}\n"${tier.verdict}"\n#CardGrading #BGS #Beckett`;
+  const fullText = buildShareText(pgScore, tier, cardName, scores, company);
+  const shortText = `🃏 PG Score: ${pgScore.toFixed(1)}/10 — ${tier.likely} ${tier.badge}\n"${tier.verdict}"\n#CardGrading #${company}`;
 
   function copy(text) {
     navigator.clipboard.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
@@ -270,14 +179,9 @@ function SharePanel({ pgScore, tier, scores, cardName, images }) {
           <button key={k} onClick={() => setPlatform(k)} style={{ flex: 1, padding: "7px 4px", borderRadius: 8, fontSize: 11, background: platform===k ? "rgba(255,215,0,0.15)" : "rgba(255,255,255,0.04)", border: `1px solid ${platform===k ? "rgba(255,215,0,0.4)" : "rgba(255,255,255,0.08)"}`, color: platform===k ? "#FFD700" : "rgba(255,255,255,0.5)" }}>{l}</button>
         ))}
       </div>
-      {images.filter(Boolean).length > 0 && (
-        <div style={{ display: "flex", gap: 6, marginBottom: 14, overflowX: "auto" }}>
-          {CATEGORIES.map((cat, i) => images[i] ? (
-            <div key={cat.id} style={{ flexShrink: 0, textAlign: "center" }}>
-              <img src={images[i]} alt={cat.label} style={{ width: 72, height: 72, objectFit: "cover", borderRadius: 8, border: "1px solid rgba(255,215,0,0.2)" }} />
-              <div style={{ fontSize: 8, color: "rgba(255,255,255,0.3)", marginTop: 2 }}>{cat.label.toUpperCase()}</div>
-            </div>
-          ) : null)}
+      {preview && (
+        <div style={{ marginBottom: 14 }}>
+          <img src={preview} alt="Card" style={{ width: "100%", maxHeight: 160, objectFit: "contain", borderRadius: 8, border: "1px solid rgba(255,215,0,0.2)" }} />
         </div>
       )}
       <div style={{ background: "rgba(0,0,0,0.4)", border: "1px solid rgba(255,215,0,0.15)", borderRadius: 12, padding: "14px 16px", marginBottom: 14 }}>
@@ -291,81 +195,181 @@ function SharePanel({ pgScore, tier, scores, cardName, images }) {
 }
 
 export default function CardGrader() {
-  const [captures, setCaptures] = useState({});
-  const [cardName, setCardName] = useState("");
-
-  const handleCapture = useCallback((catId, data) => {
-    setCaptures(prev => ({ ...prev, [catId]: data }));
-  }, []);
+  const [company, setCompany]     = useState("BGS");
+  const [cardName, setCardName]   = useState("");
+  const [preview, setPreview]     = useState(null);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [progress, setProgress]   = useState({});
+  const [results, setResults]     = useState({});
+  const [error, setError]         = useState(null);
+  const cameraRef = useRef();
+  const galleryRef = useRef();
 
   const rawScores = {
-    centering: captures.centering?.result?.score ?? null,
-    surface:   captures.surface?.result?.score   ?? null,
-    corners:   captures.corners?.result?.score   ?? null,
-    edges:     captures.edges?.result?.score     ?? null,
+    centering: results.centering?.score ?? null,
+    surface:   results.surface?.score   ?? null,
+    corners:   results.corners?.score   ?? null,
+    edges:     results.edges?.score     ?? null,
   };
   const pgScore = calcPGScore(rawScores);
-  const tier = pgScore != null ? getTier(pgScore) : null;
+  const tier = pgScore != null ? getTier(pgScore, company) : null;
   const completedCount = Object.values(rawScores).filter(v => v != null).length;
   const allComplete = completedCount === 4;
-  const images = CATEGORIES.map(c => captures[c.id]?.preview ?? null);
+  const companyColor = COMPANIES[company].color;
+
+  const analyze = useCallback(async (file) => {
+    if (!file) return;
+    setError(null);
+    setResults({});
+    setProgress({});
+    const reader = new FileReader();
+    reader.onerror = () => setError("Could not read file.");
+    reader.onload = async (e) => {
+      const dataUrl = e.target.result;
+      setPreview(dataUrl);
+      setAnalyzing(true);
+      try {
+        const base64 = await toJpegBase64(dataUrl);
+        // Run all 4 analyses in parallel
+        await Promise.all(
+          CATEGORIES.map(async (cat) => {
+            setProgress(p => ({ ...p, [cat.id]: "analyzing" }));
+            try {
+              const result = await analyzeCategory(base64, cat);
+              setResults(r => ({ ...r, [cat.id]: result }));
+              setProgress(p => ({ ...p, [cat.id]: "done" }));
+            } catch (err) {
+              setProgress(p => ({ ...p, [cat.id]: "error" }));
+              setError(err.message || "Analysis failed.");
+            }
+          })
+        );
+      } catch (err) {
+        setError(err.message || "Failed to process image.");
+      } finally {
+        setAnalyzing(false);
+      }
+    };
+    reader.readAsDataURL(file);
+  }, []);
+
+  function reset() { setPreview(null); setResults({}); setProgress({}); setError(null); }
 
   return (
     <div style={{ minHeight: "100vh", background: "#080810", color: "#fff", fontFamily: "'DM Sans', sans-serif", paddingBottom: 80 }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500&display=swap');
         @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:0.4 } }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         button { cursor: pointer; }
       `}</style>
 
+      {/* Header */}
       <div style={{ position: "relative", padding: "36px 20px 24px", textAlign: "center" }}>
         <div style={{ position: "absolute", inset: 0, background: "radial-gradient(ellipse 80% 60% at 50% 0%, rgba(255,215,0,0.07) 0%, transparent 70%)", pointerEvents: "none" }} />
         <div style={{ fontSize: 10, letterSpacing: 5, color: "rgba(255,215,0,0.5)", marginBottom: 6 }}>PRE-GRADE SCORE SYSTEM</div>
         <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 46, letterSpacing: 4, lineHeight: 0.95, background: "linear-gradient(180deg,#fff 0%,#aaa 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>CARD GRADER</div>
-        <div style={{ fontSize: 11, color: "rgba(255,255,255,0.3)", marginTop: 8, letterSpacing: 1 }}>AI-POWERED · BECKETT BLACK PREDICTOR · PG SCORE™</div>
-        <div style={{ display: "flex", justifyContent: "center", gap: 6, marginTop: 18 }}>
-          {CATEGORIES.map(c => { const s = rawScores[c.id]; const col = s == null ? "rgba(255,255,255,0.1)" : s >= 9 ? "#4CAF50" : s >= 7.5 ? "#FFD700" : "#EF5350"; return <div key={c.id} style={{ width: 32, height: 3, borderRadius: 2, background: col, transition: "background 0.5s" }} />; })}
-        </div>
-        <div style={{ fontSize: 10, color: "rgba(255,255,255,0.25)", marginTop: 6 }}>{completedCount} of 4 categories analyzed</div>
+        <div style={{ fontSize: 11, color: "rgba(255,255,255,0.3)", marginTop: 8, letterSpacing: 1 }}>AI-POWERED · MULTI-COMPANY PREDICTOR · PG SCORE™</div>
       </div>
 
       <div style={{ padding: "0 16px 16px" }}>
-        <input value={cardName} onChange={e => setCardName(e.target.value)} placeholder="Card name (e.g. 2003 LeBron James Topps Chrome RC #111)"
-          style={{ width: "100%", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.09)", borderRadius: 10, padding: "11px 14px", fontSize: 12, color: "#fff", outline: "none", fontFamily: "'DM Sans', sans-serif" }} />
-      </div>
+        {/* Grading Company Selector */}
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 10, letterSpacing: 2, color: "rgba(255,255,255,0.3)", marginBottom: 8 }}>GRADING COMPANY</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            {Object.entries(COMPANIES).map(([key, co]) => (
+              <button key={key} onClick={() => setCompany(key)} style={{ flex: 1, padding: "10px 4px", borderRadius: 10, fontSize: 12, fontWeight: 600, background: company === key ? `${co.color}18` : "rgba(255,255,255,0.04)", border: `1px solid ${company === key ? co.color + "60" : "rgba(255,255,255,0.08)"}`, color: company === key ? co.color : "rgba(255,255,255,0.4)", transition: "all 0.2s" }}>{key}</button>
+            ))}
+          </div>
+        </div>
 
-      {pgScore != null && tier != null && (
-        <div style={{ margin: "0 16px 20px", padding: 18, background: "rgba(255,215,0,0.03)", border: `1px solid ${tier.color}28`, borderRadius: 16 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-            <div style={{ position: "relative", flexShrink: 0 }}>
-              <ScoreRing score={pgScore} size={96} color={tier.color} />
-              <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-                <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 26, color: tier.color, lineHeight: 1 }}>{pgScore.toFixed(1)}</div>
-                <div style={{ fontSize: 8, color: "rgba(255,255,255,0.35)", letterSpacing: 1 }}>PG SCORE</div>
-              </div>
+        {/* Card Name */}
+        <input value={cardName} onChange={e => setCardName(e.target.value)} placeholder="Card name (e.g. 2003 LeBron James Topps Chrome RC #111)"
+          style={{ width: "100%", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.09)", borderRadius: 10, padding: "11px 14px", fontSize: 12, color: "#fff", outline: "none", fontFamily: "'DM Sans', sans-serif", marginBottom: 14 }} />
+
+        {/* Upload Area */}
+        {!preview ? (
+          <div style={{ border: "1.5px dashed rgba(255,215,0,0.25)", borderRadius: 14, padding: "32px 16px", textAlign: "center", background: "rgba(255,215,0,0.015)", marginBottom: 14 }}>
+            <div style={{ fontSize: 32, marginBottom: 10 }}>🃏</div>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, letterSpacing: 2, marginBottom: 6 }}>UPLOAD CARD PHOTO</div>
+            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", marginBottom: 20 }}>One photo — all 4 grades analyzed simultaneously</div>
+            <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+              <button onClick={() => cameraRef.current?.click()} style={{ flex: 1, maxWidth: 150, padding: "12px 8px", borderRadius: 10, background: "rgba(255,215,0,0.08)", border: "1px solid rgba(255,215,0,0.3)", color: "#FFD700", fontSize: 13 }}>📷 Camera</button>
+              <button onClick={() => galleryRef.current?.click()} style={{ flex: 1, maxWidth: 150, padding: "12px 8px", borderRadius: 10, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.14)", color: "rgba(255,255,255,0.65)", fontSize: 13 }}>🖼️ Upload</button>
             </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 19, color: tier.color, letterSpacing: 1 }}>{tier.badge} {tier.short}</div>
-              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.45)", marginBottom: 8 }}>Likely: <strong style={{ color: tier.color }}>{tier.likely}</strong></div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-                {CATEGORIES.map(c => { const s = rawScores[c.id]; if (s == null) return null; const col = s >= 9 ? "#4CAF50" : s >= 7.5 ? "#FFD700" : "#EF5350"; return <span key={c.id} style={{ fontSize: 9, padding: "2px 7px", borderRadius: 20, background: `${col}18`, border: `1px solid ${col}40`, color: col }}>{c.label} {s.toFixed(1)}</span>; })}
+            <div style={{ fontSize: 10, color: "rgba(255,215,0,0.3)", marginTop: 14 }}>💡 Lay card on white paper under good lighting</div>
+          </div>
+        ) : (
+          <div style={{ marginBottom: 14, position: "relative" }}>
+            <img src={preview} alt="" style={{ width: "100%", maxHeight: 240, objectFit: "contain", borderRadius: 12, border: "1px solid rgba(255,255,255,0.08)", display: "block" }} />
+            {!analyzing && (
+              <button onClick={reset} style={{ position: "absolute", top: 8, right: 8, background: "rgba(0,0,0,0.75)", border: "1px solid rgba(239,83,80,0.4)", color: "#EF9A9A", borderRadius: 6, padding: "4px 10px", fontSize: 10 }}>✕ Clear</button>
+            )}
+          </div>
+        )}
+
+        {error && <div style={{ color: "#EF5350", fontSize: 12, marginBottom: 12, padding: "8px 12px", background: "rgba(239,83,80,0.08)", borderRadius: 8, border: "1px solid rgba(239,83,80,0.2)" }}>{error}</div>}
+
+        {/* Progress / Results Grid */}
+        {(analyzing || completedCount > 0) && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 14 }}>
+            {CATEGORIES.map(cat => {
+              const res = results[cat.id];
+              const prog = progress[cat.id];
+              const s = res?.score;
+              const col = s == null ? "rgba(255,255,255,0.15)" : s >= 9 ? "#4CAF50" : s >= 7.5 ? "#FFD700" : "#EF5350";
+              return (
+                <div key={cat.id} style={{ padding: "12px", background: "rgba(255,255,255,0.025)", borderRadius: 12, border: `1px solid ${res ? col + "44" : "rgba(255,255,255,0.07)"}` }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                    <span style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>{cat.icon} {cat.label.toUpperCase()}</span>
+                    {prog === "analyzing" && <div style={{ width: 14, height: 14, border: "2px solid rgba(255,215,0,0.2)", borderTopColor: "#FFD700", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} />}
+                    {prog === "done" && s != null && <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: col }}>{s.toFixed(1)}</span>}
+                    {prog === "error" && <span style={{ fontSize: 11, color: "#EF5350" }}>ERR</span>}
+                    {!prog && <span style={{ fontSize: 10, color: "rgba(255,255,255,0.2)" }}>—</span>}
+                  </div>
+                  {s != null && <MiniBar score={s} color={col} />}
+                  {res?.verdict && <div style={{ fontSize: 10, color: "rgba(255,255,255,0.45)", marginTop: 5, lineHeight: 1.4 }}>{res.verdict}</div>}
+                  {res?.defects?.filter(d => d && d !== "None").length > 0 && (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 5 }}>
+                      {res.defects.filter(d => d && d !== "None").map((d, i) => (
+                        <span key={i} style={{ fontSize: 8, padding: "1px 6px", background: "rgba(239,83,80,0.12)", border: "1px solid rgba(239,83,80,0.25)", borderRadius: 20, color: "#EF9A9A" }}>{d}</span>
+                      ))}
+                    </div>
+                  )}
+                  <div style={{ fontSize: 9, color: "rgba(255,255,255,0.2)", marginTop: 4 }}>Weight: {cat.weight}</div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Live PG Score (partial) */}
+        {pgScore != null && tier != null && !allComplete && (
+          <div style={{ padding: 16, background: "rgba(255,215,0,0.03)", border: `1px solid ${tier.color}28`, borderRadius: 14, marginBottom: 14 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+              <div style={{ position: "relative", flexShrink: 0 }}>
+                <ScoreRing score={pgScore} size={80} color={tier.color} />
+                <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+                  <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: tier.color, lineHeight: 1 }}>{pgScore.toFixed(1)}</div>
+                  <div style={{ fontSize: 7, color: "rgba(255,255,255,0.35)", letterSpacing: 1 }}>PG SCORE</div>
+                </div>
+              </div>
+              <div>
+                <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, color: tier.color }}>{tier.badge} {tier.short}</div>
+                <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)" }}>Likely: <strong style={{ color: tier.color }}>{tier.likely}</strong></div>
+                <div style={{ fontSize: 10, color: "rgba(255,255,255,0.25)", marginTop: 3 }}>{completedCount} of 4 analyzed…</div>
               </div>
             </div>
           </div>
-        </div>
-      )}
-
-      <div style={{ padding: "0 16px" }}>
-        {CATEGORIES.map(cat => (
-          <CaptureCard key={cat.id} cat={cat} captured={captures[cat.id]} onCapture={data => handleCapture(cat.id, data)} />
-        ))}
+        )}
       </div>
 
+      {/* Final Report */}
       {allComplete && tier != null && (
         <div style={{ padding: "0 16px" }}>
           <div style={{ background: "rgba(0,0,0,0.5)", border: `1px solid ${tier.color}40`, borderRadius: 18, padding: "22px 20px" }}>
-            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 11, letterSpacing: 4, color: `${tier.color}80`, marginBottom: 16 }}>FINAL PRE-GRADE REPORT</div>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 11, letterSpacing: 4, color: `${tier.color}80`, marginBottom: 16 }}>FINAL PRE-GRADE REPORT · {COMPANIES[company].name.toUpperCase()}</div>
             <div style={{ display: "flex", alignItems: "center", gap: 20, marginBottom: 18 }}>
               <div style={{ position: "relative", flexShrink: 0 }}>
                 <ScoreRing score={pgScore} size={116} color={tier.color} />
@@ -375,40 +379,18 @@ export default function CardGrader() {
                 </div>
               </div>
               <div>
-                <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: tier.color, letterSpacing: 1 }}>{tier.badge} {tier.label}</div>
+                <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: tier.color, letterSpacing: 1 }}>{tier.badge} {tier.short}</div>
                 <div style={{ fontSize: 12, color: "rgba(255,255,255,0.5)", lineHeight: 1.5, marginBottom: 8 }}>{tier.verdict}</div>
                 <span style={{ fontSize: 11, padding: "4px 12px", background: `${tier.color}18`, border: `1px solid ${tier.color}40`, borderRadius: 20, color: tier.color }}>Predicted: {tier.likely}</span>
               </div>
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 16 }}>
-              {CATEGORIES.map(c => { const s = rawScores[c.id]; const col = s >= 9 ? "#4CAF50" : s >= 7.5 ? "#FFD700" : "#EF5350"; return (
-                <div key={c.id} style={{ padding: "11px 12px", background: "rgba(255,255,255,0.03)", borderRadius: 10, border: `1px solid ${col}2a` }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span style={{ fontSize: 10, color: "rgba(255,255,255,0.4)" }}>{c.icon} {c.label.toUpperCase()}</span>
-                    <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: col }}>{s.toFixed(1)}</span>
-                  </div>
-                  <MiniBar score={s} color={col} />
-                  <div style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", marginTop: 4 }}>Weight: {c.weight}</div>
-                </div>
-              ); })}
-            </div>
-            {images.filter(Boolean).length > 0 && (
-              <div style={{ marginBottom: 14 }}>
-                <div style={{ fontSize: 9, letterSpacing: 2, color: "rgba(255,255,255,0.25)", marginBottom: 8 }}>SUBMITTED PHOTOS</div>
-                <div style={{ display: "flex", gap: 8 }}>
-                  {CATEGORIES.map((c, i) => images[i] ? (
-                    <div key={c.id} style={{ flex: 1, textAlign: "center" }}>
-                      <img src={images[i]} alt={c.label} style={{ width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 8, border: "1px solid rgba(255,255,255,0.08)" }} />
-                      <div style={{ fontSize: 7, color: "rgba(255,255,255,0.3)", marginTop: 3 }}>{c.label.toUpperCase()}</div>
-                    </div>
-                  ) : null)}
-                </div>
-              </div>
-            )}
           </div>
-          <SharePanel pgScore={pgScore} tier={tier} scores={rawScores} cardName={cardName} images={images} />
+          <SharePanel pgScore={pgScore} tier={tier} scores={rawScores} cardName={cardName} preview={preview} company={company} />
         </div>
       )}
+
+      <input ref={cameraRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={e => { if (e.target.files?.[0]) { analyze(e.target.files[0]); e.target.value = ""; } }} />
+      <input ref={galleryRef} type="file" accept="image/*" style={{ display: "none" }} onChange={e => { if (e.target.files?.[0]) { analyze(e.target.files[0]); e.target.value = ""; } }} />
     </div>
   );
 }
