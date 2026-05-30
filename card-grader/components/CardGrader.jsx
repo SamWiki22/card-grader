@@ -69,9 +69,9 @@ function getTier(score, company, cardGame) {
   // PSA grades Pokémon stricter due to high population counts — shift top thresholds up
   if (company === "PSA" && cardGame === "pokemon") {
     tiers = [
-      { ...tiers[0], min: 9.40, verdict: "Excellent condition. Strong PSA 10 Gem Mint candidate." },
-      { ...tiers[1], min: 8.90, verdict: "Very strong card. Likely PSA 9 Mint." },
-      { ...tiers[2], min: 7.90 },
+      { ...tiers[0], min: 9.20, verdict: "Excellent condition. Strong PSA 10 Gem Mint candidate." },
+      { ...tiers[1], min: 8.60, verdict: "Very strong card. Likely PSA 9 Mint." },
+      { ...tiers[2], min: 7.60 },
       ...tiers.slice(3),
     ];
   }
@@ -122,8 +122,8 @@ async function toThumbnail(dataUrl, maxDim = 400) {
 }
 async function analyzeCategory(base64, cat, cardGame) {
   const gameContext = cardGame === "pokemon"
-    ? "Important context: This is a Pokémon TCG card. Apply strict grading standards — Pokémon cards are known for centering issues, holo surface scratches, and edge/corner wear from play. PSA and other graders are particularly strict on Pokémon due to high population counts."
-    : "Important context: This is a non-Pokémon trading card (e.g. Bandai, sports card). These cards often have tighter manufacturing tolerances and higher base quality than vintage Pokémon cards — grade accordingly.";
+    ? "Context: This is a Pokémon TCG card. Common issues to watch for include holo surface scratches, centering variance, and corner/edge wear from handling."
+    : "Context: This is a non-Pokémon trading card (e.g. Bandai, One Piece, Dragon Ball). These cards typically have consistent print quality and tight manufacturing tolerances.";
   const prompt = gameContext + "\n\n" + cat.prompt;
   const resp = await fetch("/api/analyze", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ base64, prompt }) });
   if (!resp.ok) { const e = await resp.json().catch(() => ({})); throw new Error(e.error || "Analysis failed."); }
