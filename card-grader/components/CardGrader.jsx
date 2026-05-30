@@ -64,7 +64,19 @@ const CATEGORIES = [
 const COLLECTION_KEY = "pg-collection";
 function loadCollection() { try { return JSON.parse(localStorage.getItem(COLLECTION_KEY) || "[]"); } catch { return []; } }
 function saveCollection(col) { try { localStorage.setItem(COLLECTION_KEY, JSON.stringify(col)); } catch {} }
-function getTier(score, company) { const t = COMPANIES[company].tiers; return t.find(x => score >= x.min) || t[t.length - 1]; }
+function getTier(score, company, cardGame) {
+  let tiers = COMPANIES[company].tiers;
+  // PSA grades Pokémon stricter due to high population counts — shift top thresholds up
+  if (company === "PSA" && cardGame === "pokemon") {
+    tiers = [
+      { ...tiers[0], min: 9.40, verdict: "Excellent condition. Strong PSA 10 candidate — note PSA grades Pokémon strictly due to high pop counts. Real-world result may vary." },
+      { ...tiers[1], min: 8.90, verdict: "Very strong card. Likely PSA 9 Mint for Pokémon — PSA holds a higher bar for this TCG." },
+      { ...tiers[2], min: 7.90 },
+      ...tiers.slice(3),
+    ];
+  }
+  return tiers.find(t => score >= t.min) || tiers[tiers.length - 1];
+}
 function calcPGScore(scores) {
   let tw = 0, ws = 0;
   for (const [k, w] of Object.entries(WEIGHTS)) { if (scores[k] != null) { ws += scores[k] * w; tw += w; } }
@@ -108,8 +120,12 @@ async function toThumbnail(dataUrl, maxDim = 400) {
     img.onerror = () => resolve(dataUrl); img.src = dataUrl;
   });
 }
-async function analyzeCategory(base64, cat) {
-  const resp = await fetch("/api/analyze", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ base64, prompt: cat.prompt }) });
+async function analyzeCategory(base64, cat, cardGame) {
+  const gameContext = cardGame === "pokemon"
+    ? "Important context: This is a Pokémon TCG card. Apply strict grading standards — Pokémon cards are known for centering issues, holo surface scratches, and edge/corner wear from play. PSA and other graders are particularly strict on Pokémon due to high population counts."
+    : "Important context: This is a non-Pokémon trading card (e.g. Bandai, sports card). These cards often have tighter manufacturing tolerances and higher base quality than vintage Pokémon cards — grade accordingly.";
+  const prompt = gameContext + "\n\n" + cat.prompt;
+  const resp = await fetch("/api/analyze", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ base64, prompt }) });
   if (!resp.ok) { const e = await resp.json().catch(() => ({})); throw new Error(e.error || "Analysis failed."); }
   const { text } = await resp.json();
   return parseResponse(text);
@@ -360,7 +376,7 @@ function CollectionModal({ onClose }) {
       ) : (
         <div style={{ display:"flex", flexDirection:"column", gap:14, position:"relative" }}>
           {collection.map(card => {
-            const t = getTier(card.pgScore, card.company);
+            const t = getTier(card.pgScore, card.company, card.cardGame || "pokemon");
             const col = t.color;
             return (
               <div key={card.id}>
@@ -415,6 +431,7 @@ function CollectionModal({ onClose }) {
 export default function CardGrader() {
   const [company, setCompany]               = useState("BGS");
   const [cardName, setCardName]             = useState("");
+  const [cardGame, setCardGame]             = useState("pokemon");
   const [preview, setPreview]               = useState(null);
   const [analyzing, setAnalyzing]           = useState(false);
   const [progress, setProgress]             = useState({});
@@ -436,7 +453,7 @@ export default function CardGrader() {
     edges:     results.edges?.score     ?? null,
   };
   const pgScore = calcPGScore(rawScores);
-  const tier = pgScore != null ? getTier(pgScore, company) : null;
+  const tier = pgScore != null ? getTier(pgScore, company, cardGame) : null;
   const completedCount = Object.values(rawScores).filter(v => v != null).length;
   const allComplete = completedCount === 4;
 
@@ -453,7 +470,7 @@ export default function CardGrader() {
         await Promise.all(CATEGORIES.map(async (cat) => {
           setProgress(p => ({ ...p, [cat.id]:"analyzing" }));
           try {
-            const result = await analyzeCategory(base64, cat);
+            const result = await analyzeCategory(base64, cat, cardGame);
             setResults(r => ({ ...r, [cat.id]:result }));
             setProgress(p => ({ ...p, [cat.id]:"done" }));
           } catch (err) {
@@ -471,7 +488,7 @@ export default function CardGrader() {
 
   async function handleSaveToCollection(reportId) {
     const thumbnail = preview ? await toThumbnail(preview) : null;
-    const entry = { id: Date.now().toString(36), reportId, date: new Date().toLocaleDateString("en-US",{year:"numeric",month:"short",day:"numeric"}), cardName, company, pgScore, scores: rawScores, thumbnail };
+    const entry = { id: Date.now().toString(36), reportId, date: new Date().toLocaleDateString("en-US",{year:"numeric",month:"short",day:"numeric"}), cardName, company, cardGame, pgScore, scores: rawScores, thumbnail };
     const col = loadCollection(); col.unshift(entry); saveCollection(col);
     setCollectionCount(col.length); setReportSaved(true);
   }
@@ -547,6 +564,26 @@ export default function CardGrader() {
             <div style={{ fontFamily:"'DM Mono',monospace", fontSize:8, letterSpacing:4, color:"rgba(255,255,255,0.18)", marginBottom:8 }}>CARD IDENTITY</div>
             <input value={cardName} onChange={e => setCardName(e.target.value)} placeholder="e.g. Charizard Base Set Holo #4"
               style={{ width:"100%", background:"rgba(255,255,255,0.03)", border:`1px solid ${cardName?"rgba(255,215,0,0.22)":"rgba(255,255,255,0.07)"}`, borderRadius:12, padding:"13px 16px", fontSize:13, color:"#fff", fontFamily:"'DM Sans',sans-serif", transition:"border-color 0.3s", boxShadow:cardName?"0 0 14px rgba(255,215,0,0.06)":"none" }}/>
+          </div>
+
+          {/* ── CARD TYPE ── */}
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontFamily:"'DM Mono',monospace", fontSize:8, letterSpacing:4, color:"rgba(255,255,255,0.18)", marginBottom:8 }}>CARD TYPE</div>
+            <div style={{ display:"flex", gap:8 }}>
+              {[
+                { id:"pokemon", label:"🎴 Pokémon" },
+                { id:"other",   label:"🃏 Other TCG" },
+              ].map(g => (
+                <button key={g.id} onClick={() => setCardGame(g.id)} style={{ flex:1, padding:"11px", borderRadius:12, fontSize:12, fontWeight:600, background:cardGame===g.id?"rgba(255,215,0,0.1)":"rgba(255,255,255,0.02)", border:`1.5px solid ${cardGame===g.id?"rgba(255,215,0,0.35)":"rgba(255,255,255,0.06)"}`, color:cardGame===g.id?"#FFD700":"rgba(255,255,255,0.28)", transition:"all 0.2s" }}>
+                  {g.label}
+                </button>
+              ))}
+            </div>
+            {cardGame === "pokemon" && (
+              <div style={{ fontFamily:"'DM Mono',monospace", fontSize:9, color:"rgba(255,215,0,0.3)", marginTop:7, lineHeight:1.6, letterSpacing:0.3 }}>
+                PSA thresholds tightened for Pokémon — high pop counts mean stricter real-world grades.
+              </div>
+            )}
           </div>
 
           {/* ── UPLOAD ZONE ── */}
