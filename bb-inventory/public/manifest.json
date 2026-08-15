@@ -1,0 +1,11 @@
+{
+  "name": "BB Inventory - Bearded Bear",
+  "short_name": "BB Inventory",
+  "description": "Inventory tracker for Bearded Bear trading card shop",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#FAF6F0",
+  "theme_color": "#B5651D",
+  "orientation": "any",
+  "icons": []
+}
