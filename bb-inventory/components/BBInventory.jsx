@@ -67,6 +67,19 @@ async function toThumbnail(dataUrl, maxDim = 260) {
     img.onerror = () => resolve(dataUrl); img.src = dataUrl;
   });
 }
+async function toItemPhoto(dataUrl, maxDim = 480) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      let w = img.naturalWidth, h = img.naturalHeight;
+      if (w > maxDim || h > maxDim) { const r = Math.min(maxDim / w, maxDim / h); w = Math.round(w * r); h = Math.round(h * r); }
+      const c = document.createElement("canvas"); c.width = w; c.height = h;
+      c.getContext("2d").drawImage(img, 0, 0, w, h);
+      resolve(c.toDataURL("image/jpeg", 0.75));
+    };
+    img.onerror = () => resolve(dataUrl); img.src = dataUrl;
+  });
+}
 
 function emptyDraft(type = "box") {
   return {
@@ -81,6 +94,7 @@ function emptyDraft(type = "box") {
     price: "",
     lowStock: DEFAULT_LOW_STOCK,
     notes: "",
+    photo: null,
   };
 }
 
@@ -151,9 +165,12 @@ function ItemCard({ item, onAdjust, onOpen }) {
           {out ? <Badge color={COLORS.danger} soft={COLORS.dangerSoft}>OUT OF STOCK</Badge>
             : low ? <Badge color={COLORS.danger} soft={COLORS.dangerSoft}>LOW STOCK</Badge> : null}
         </div>
-        <div>
-          <div style={{ fontSize: 16, fontWeight: 800, color: COLORS.text, lineHeight: 1.25 }}>{item.name || "Unnamed item"}</div>
-          {item.set && <div style={{ fontSize: 13, color: COLORS.textDim, marginTop: 2 }}>{item.set}</div>}
+        <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+          {item.photo && <img src={item.photo} alt="" style={{ width: 44, height: 44, objectFit: "cover", borderRadius: 10, flexShrink: 0, border: `1px solid ${COLORS.border}` }} />}
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: COLORS.text, lineHeight: 1.25 }}>{item.name || "Unnamed item"}</div>
+            {item.set && <div style={{ fontSize: 13, color: COLORS.textDim, marginTop: 2 }}>{item.set}</div>}
+          </div>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {item.type === "single" && item.condition && <Badge color={COLORS.amberDark} soft={COLORS.amberSoft}>{item.condition}</Badge>}
@@ -193,6 +210,8 @@ function ItemCard({ item, onAdjust, onOpen }) {
 
 function ItemModal({ draft, onChange, onSave, onDelete, onClose, isNew }) {
   const canSave = draft.name.trim().length > 0;
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const photoRef = useRef();
   const field = (label, node) => (
     <div style={{ marginBottom: 16 }}>
       <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 0.5, color: COLORS.textDim, marginBottom: 7 }}>{label}</div>
@@ -203,6 +222,22 @@ function ItemModal({ draft, onChange, onSave, onDelete, onClose, isNew }) {
     width: "100%", padding: "13px 14px", borderRadius: 12, border: `1.5px solid ${COLORS.border}`,
     fontSize: 15, color: COLORS.text, background: COLORS.bg, fontFamily: "inherit",
   };
+
+  function handlePhotoFile(e) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setPhotoBusy(true);
+    const reader = new FileReader();
+    reader.onload = async evt => {
+      const compressed = await toItemPhoto(evt.target.result);
+      onChange({ ...draft, photo: compressed });
+      setPhotoBusy(false);
+    };
+    reader.onerror = () => setPhotoBusy(false);
+    reader.readAsDataURL(file);
+  }
+
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(43,27,18,0.45)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center" }} onClick={onClose}>
       <div onClick={e => e.stopPropagation()} style={{
@@ -226,6 +261,27 @@ function ItemModal({ draft, onChange, onSave, onDelete, onClose, isNew }) {
                   color: draft.type === t.id ? t.color : COLORS.textDim,
                 }}>{t.icon} {t.label}</button>
             ))}
+          </div>
+        ))}
+
+        {field("PHOTO (OPTIONAL)", (
+          <div>
+            <input ref={photoRef} type="file" accept="image/*" capture="environment" onChange={handlePhotoFile} style={{ display: "none" }} />
+            {draft.photo ? (
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <img src={draft.photo} alt="Item" style={{ width: 72, height: 72, objectFit: "cover", borderRadius: 12, border: `1px solid ${COLORS.border}` }} />
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <button onClick={() => photoRef.current?.click()} disabled={photoBusy} style={{ padding: "8px 14px", borderRadius: 10, border: `1px solid ${COLORS.border}`, background: COLORS.bg, color: COLORS.textDim, fontSize: 12, fontWeight: 700 }}>🔄 Retake</button>
+                  <button onClick={() => onChange({ ...draft, photo: null })} style={{ padding: "8px 14px", borderRadius: 10, border: `1px solid ${COLORS.danger}30`, background: COLORS.dangerSoft, color: COLORS.danger, fontSize: 12, fontWeight: 700 }}>🗑️ Remove</button>
+                </div>
+              </div>
+            ) : (
+              <button onClick={() => photoRef.current?.click()} disabled={photoBusy} style={{
+                width: "100%", padding: "16px 14px", borderRadius: 12, border: `1.5px dashed ${COLORS.border}`,
+                background: COLORS.bg, color: COLORS.textDim, fontSize: 13, fontWeight: 700,
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+              }}>{photoBusy ? "Processing…" : "📷 Add a photo — helps the Sell scanner recognize this item"}</button>
+            )}
           </div>
         ))}
 
@@ -332,7 +388,7 @@ function SellModal({ items, onConfirm, onClose }) {
       setStatus("identifying");
       try {
         const base64 = await toJpegBase64(dataUrl);
-        const catalog = items.map(i => ({ id: i.id, name: i.name, set: i.set, type: i.type }));
+        const catalog = items.map(i => ({ id: i.id, name: i.name, set: i.set, type: i.type, photo: i.photo ? i.photo.split(",")[1] : null }));
         const resp = await fetch("/api/identify", {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ base64, catalog }),
