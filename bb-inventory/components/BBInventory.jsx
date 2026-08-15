@@ -14,6 +14,26 @@ const TYPES = [
 ];
 const TYPE_MAP = Object.fromEntries(TYPES.map(t => [t.id, t]));
 
+const GAMES = [
+  { id: "pokemon", label: "Pokémon", icon: "⚡", keywords: ["pokemon", "pokémon"] },
+  { id: "mtg", label: "Magic: The Gathering", icon: "🔮", keywords: ["magic", "mtg"] },
+  { id: "onepiece", label: "One Piece", icon: "☠️", keywords: ["one piece"] },
+  { id: "dbs", label: "Dragon Ball", icon: "🐉", keywords: ["dragon ball", "dragonball"] },
+  { id: "gundam", label: "Gundam", icon: "🤖", keywords: ["gundam"] },
+  { id: "unionarena", label: "Union Arena", icon: "🎫", keywords: ["union arena"] },
+  { id: "other", label: "Other", icon: "🎴", keywords: [] },
+];
+const GAME_MAP = Object.fromEntries(GAMES.map(g => [g.id, g]));
+
+function inferGame(item) {
+  if (item.game && GAME_MAP[item.game]) return item.game;
+  const text = ((item.set || "") + " " + (item.name || "")).toLowerCase();
+  for (const g of GAMES) {
+    if (g.keywords.some(k => text.includes(k))) return g.id;
+  }
+  return "other";
+}
+
 const CONDITIONS = ["NM", "LP", "MP", "HP", "DMG"];
 
 const DEFAULT_LOW_STOCK = 2;
@@ -85,6 +105,7 @@ function emptyDraft(type = "box") {
   return {
     id: null,
     type,
+    game: "",
     name: "",
     set: "",
     sku: "",
@@ -151,6 +172,7 @@ function IconButton({ onClick, children, title, style }) {
 
 function ItemCard({ item, onAdjust, onOpen }) {
   const t = TYPE_MAP[item.type];
+  const g = GAME_MAP[inferGame(item)];
   const low = item.lowStock > 0 && item.quantity <= item.lowStock;
   const out = item.quantity === 0;
   return (
@@ -161,7 +183,10 @@ function ItemCard({ item, onAdjust, onOpen }) {
     }}>
       <div onClick={() => onOpen(item)} style={{ cursor: "pointer", display: "flex", flexDirection: "column", gap: 8 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
-          <Badge color={t.color} soft={t.color + "14"}>{t.icon} {t.singular}</Badge>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            <Badge color={t.color} soft={t.color + "14"}>{t.icon} {t.singular}</Badge>
+            {g.id !== "other" && <Badge color={COLORS.textDim} soft="rgba(43,27,18,0.05)">{g.icon} {g.label}</Badge>}
+          </div>
           {out ? <Badge color={COLORS.danger} soft={COLORS.dangerSoft}>OUT OF STOCK</Badge>
             : low ? <Badge color={COLORS.danger} soft={COLORS.dangerSoft}>LOW STOCK</Badge> : null}
         </div>
@@ -260,6 +285,19 @@ function ItemModal({ draft, onChange, onSave, onDelete, onClose, isNew }) {
                   border: `1.5px solid ${draft.type === t.id ? t.color + "70" : COLORS.border}`,
                   color: draft.type === t.id ? t.color : COLORS.textDim,
                 }}>{t.icon} {t.label}</button>
+            ))}
+          </div>
+        ))}
+
+        {field("GAME", (
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {GAMES.map(g => (
+              <button key={g.id} onClick={() => onChange({ ...draft, game: g.id })} style={{
+                padding: "9px 12px", borderRadius: 10, fontSize: 12, fontWeight: 700,
+                background: draft.game === g.id ? COLORS.amberSoft : COLORS.bg,
+                border: `1.5px solid ${draft.game === g.id ? COLORS.amber + "70" : COLORS.border}`,
+                color: draft.game === g.id ? COLORS.amberDark : COLORS.textDim,
+              }}>{g.icon} {g.label}</button>
             ))}
           </div>
         ))}
@@ -641,6 +679,7 @@ export default function BBInventory() {
   const [sales, setSales] = useState([]);
   const [loaded, setLoaded] = useState(false);
   const [activeType, setActiveType] = useState("all");
+  const [activeGame, setActiveGame] = useState("all");
   const [search, setSearch] = useState("");
   const [draft, setDraft] = useState(null);
   const [isNew, setIsNew] = useState(false);
@@ -655,6 +694,7 @@ export default function BBInventory() {
   const filtered = useMemo(() => {
     let list = items;
     if (activeType !== "all") list = list.filter(i => i.type === activeType);
+    if (activeGame !== "all") list = list.filter(i => inferGame(i) === activeGame);
     const q = search.trim().toLowerCase();
     if (q) list = list.filter(i => (i.name + " " + i.set + " " + i.sku).toLowerCase().includes(q));
     return [...list].sort((a, b) => {
@@ -663,7 +703,7 @@ export default function BBInventory() {
       if (aLow !== bLow) return aLow ? -1 : 1;
       return a.name.localeCompare(b.name);
     });
-  }, [items, activeType, search]);
+  }, [items, activeType, activeGame, search]);
 
   const stats = useMemo(() => {
     const totalUnits = items.reduce((s, i) => s + i.quantity, 0);
@@ -679,6 +719,13 @@ export default function BBInventory() {
     return c;
   }, [items]);
 
+  const gameCounts = useMemo(() => {
+    const c = { all: items.length };
+    for (const g of GAMES) c[g.id] = 0;
+    for (const i of items) c[inferGame(i)]++;
+    return c;
+  }, [items]);
+
   const todaySales = useMemo(() => {
     const start = new Date(); start.setHours(0, 0, 0, 0);
     const list = sales.filter(s => s.timestamp >= start.getTime());
@@ -686,7 +733,7 @@ export default function BBInventory() {
   }, [sales]);
 
   function openAdd(type = "box") { setDraft(emptyDraft(type)); setIsNew(true); }
-  function openEdit(item) { setDraft({ ...item, cost: item.cost ?? "", price: item.price ?? "" }); setIsNew(false); }
+  function openEdit(item) { setDraft({ ...item, game: item.game || inferGame(item), cost: item.cost ?? "", price: item.price ?? "" }); setIsNew(false); }
   function closeModal() { setDraft(null); }
 
   function saveDraft() {
@@ -731,9 +778,9 @@ export default function BBInventory() {
   }
 
   function exportCSV() {
-    const cols = ["type", "name", "set", "condition", "sku", "quantity", "cost", "price", "lowStock", "notes"];
+    const cols = ["type", "game", "name", "set", "condition", "sku", "quantity", "cost", "price", "lowStock", "notes"];
     const esc = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
-    const rows = [cols.join(",")].concat(items.map(i => cols.map(c => esc(i[c])).join(",")));
+    const rows = [cols.join(",")].concat(items.map(i => cols.map(c => esc(c === "game" ? GAME_MAP[inferGame(i)].label : i[c])).join(",")));
     const blob = new Blob([rows.join("\n")], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -852,7 +899,7 @@ export default function BBInventory() {
       </div>
 
       {/* Filters */}
-      <div style={{ padding: "0 20px 18px", maxWidth: 1100, margin: "0 auto", display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+      <div style={{ padding: "0 20px 10px", maxWidth: 1100, margin: "0 auto", display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Search by name, set, or SKU…"
           style={{ flex: "1 1 220px", padding: "13px 16px", borderRadius: 12, border: `1.5px solid ${COLORS.border}`, fontSize: 15, background: COLORS.panel, color: COLORS.text }} />
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -865,6 +912,17 @@ export default function BBInventory() {
             }}>{t.icon} {t.label} ({typeCounts[t.id] ?? 0})</button>
           ))}
         </div>
+      </div>
+
+      <div style={{ padding: "0 20px 18px", maxWidth: 1100, margin: "0 auto", display: "flex", gap: 6, flexWrap: "wrap" }}>
+        {[{ id: "all", label: "All Games", icon: "🗂️" }, ...GAMES].map(g => (
+          <button key={g.id} onClick={() => setActiveGame(g.id)} style={{
+            padding: "9px 13px", borderRadius: 10, fontSize: 12, fontWeight: 700,
+            background: activeGame === g.id ? COLORS.amberSoft : COLORS.panel,
+            border: `1.5px solid ${activeGame === g.id ? COLORS.amber + "70" : COLORS.border}`,
+            color: activeGame === g.id ? COLORS.amberDark : COLORS.textFaint,
+          }}>{g.icon} {g.label} ({gameCounts[g.id] ?? 0})</button>
+        ))}
       </div>
 
       {/* Grid */}
