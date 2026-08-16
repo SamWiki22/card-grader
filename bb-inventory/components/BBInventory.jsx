@@ -134,6 +134,8 @@ const COLORS = {
   danger: "#C0392B",
   dangerSoft: "rgba(192,57,43,0.10)",
   good: "#5B7B4A",
+  info: "#3E6B8A",
+  infoSoft: "rgba(62,107,138,0.10)",
 };
 
 function StatTile({ label, value, sub, accent }) {
@@ -233,7 +235,7 @@ function ItemCard({ item, onAdjust, onOpen }) {
 
 // ── Add / Edit modal ────────────────────────────────────────────────────
 
-function ItemModal({ draft, onChange, onSave, onDelete, onClose, isNew }) {
+function ItemModal({ draft, onChange, onSave, onDelete, onClose, isNew, banner }) {
   const canSave = draft.name.trim().length > 0;
   const [photoBusy, setPhotoBusy] = useState(false);
   const photoRef = useRef();
@@ -274,6 +276,10 @@ function ItemModal({ draft, onChange, onSave, onDelete, onClose, isNew }) {
           <div style={{ fontSize: 20, fontWeight: 800, color: COLORS.text }}>{isNew ? "Add Item" : "Edit Item"}</div>
           <button onClick={onClose} style={{ width: 40, height: 40, borderRadius: 10, border: `1px solid ${COLORS.border}`, background: COLORS.bg, fontSize: 16 }}>✕</button>
         </div>
+
+        {banner && (
+          <div style={{ fontSize: 13, color: COLORS.info, background: COLORS.infoSoft, border: `1px solid ${COLORS.info}30`, borderRadius: 12, padding: "10px 14px", marginBottom: 18, lineHeight: 1.5 }}>{banner}</div>
+        )}
 
         {field("ITEM TYPE", (
           <div style={{ display: "flex", gap: 8 }}>
@@ -685,7 +691,10 @@ export default function BBInventory() {
   const [isNew, setIsNew] = useState(false);
   const [showSell, setShowSell] = useState(false);
   const [showSalesLog, setShowSalesLog] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [scanBanner, setScanBanner] = useState("");
   const importRef = useRef();
+  const scanRef = useRef();
 
   useEffect(() => { setItems(loadItems()); setSales(loadSales()); setLoaded(true); }, []);
   useEffect(() => { if (loaded) saveItems(items); }, [items, loaded]);
@@ -732,9 +741,56 @@ export default function BBInventory() {
     return { units: list.reduce((s, x) => s + x.quantity, 0), total: list.reduce((s, x) => s + x.total, 0) };
   }, [sales]);
 
-  function openAdd(type = "box") { setDraft(emptyDraft(type)); setIsNew(true); }
-  function openEdit(item) { setDraft({ ...item, game: item.game || inferGame(item), cost: item.cost ?? "", price: item.price ?? "" }); setIsNew(false); }
-  function closeModal() { setDraft(null); }
+  function openAdd(type = "box") { setDraft(emptyDraft(type)); setScanBanner(""); setIsNew(true); }
+  function openEdit(item) { setDraft({ ...item, game: item.game || inferGame(item), cost: item.cost ?? "", price: item.price ?? "" }); setScanBanner(""); setIsNew(false); }
+  function closeModal() { setDraft(null); setScanBanner(""); }
+
+  function handleScanFile(e) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setScanning(true);
+    const reader = new FileReader();
+    reader.onload = async evt => {
+      const dataUrl = evt.target.result;
+      let extracted = null;
+      try {
+        const base64 = await toJpegBase64(dataUrl);
+        const resp = await fetch("/api/scan-item", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ base64 }),
+        });
+        extracted = await resp.json().catch(() => null);
+      } catch { extracted = null; }
+
+      const photo = await toItemPhoto(dataUrl);
+      const type = extracted?.type && TYPE_MAP[extracted.type] ? extracted.type : "single";
+      const base = emptyDraft(type);
+      const gotFields = extracted && extracted.aiAvailable !== false && (extracted.name || extracted.set);
+
+      setDraft({
+        ...base,
+        type,
+        game: extracted?.game && GAME_MAP[extracted.game] ? extracted.game : "",
+        name: extracted?.name || "",
+        set: extracted?.set || "",
+        condition: extracted?.condition || base.condition,
+        notes: extracted?.notes || "",
+        photo,
+      });
+
+      if (!extracted || extracted.aiAvailable === false) {
+        setScanBanner("📷 Photo attached. AI reading isn't configured for this shop yet — fill in the details below.");
+      } else if (!gotFields || (extracted.confidence ?? 0) < 0.4) {
+        setScanBanner("📷 Photo attached, but the scan wasn't confident — please check the details below carefully.");
+      } else {
+        setScanBanner("✨ Auto-filled from the photo — double-check before saving, especially price and quantity.");
+      }
+      setIsNew(true);
+      setScanning(false);
+    };
+    reader.readAsDataURL(file);
+  }
 
   function saveDraft() {
     const clean = {
@@ -850,7 +906,7 @@ export default function BBInventory() {
       `}</style>
 
       {draft && (
-        <ItemModal draft={draft} onChange={setDraft} onSave={saveDraft} onDelete={deleteDraft} onClose={closeModal} isNew={isNew} />
+        <ItemModal draft={draft} onChange={setDraft} onSave={saveDraft} onDelete={deleteDraft} onClose={closeModal} isNew={isNew} banner={scanBanner} />
       )}
       {showSell && (
         <SellModal items={items} onConfirm={handleConfirmSale} onClose={() => setShowSell(false)} />
@@ -858,7 +914,17 @@ export default function BBInventory() {
       {showSalesLog && (
         <SalesLogModal sales={sales} onVoid={voidSale} onExportCSV={exportSalesCSV} onClose={() => setShowSalesLog(false)} />
       )}
+      {scanning && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(43,27,18,0.55)", zIndex: 250, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ background: COLORS.panel, borderRadius: 20, padding: "32px 40px", textAlign: "center", boxShadow: "0 10px 40px rgba(43,27,18,0.3)" }}>
+            <div style={{ fontSize: 36, marginBottom: 10 }}>🔍</div>
+            <div style={{ fontSize: 15, fontWeight: 800, color: COLORS.text }}>Reading item…</div>
+            <div style={{ fontSize: 12, color: COLORS.textDim, marginTop: 4 }}>This takes a few seconds</div>
+          </div>
+        </div>
+      )}
       <input ref={importRef} type="file" accept="application/json" onChange={handleImportFile} style={{ display: "none" }} />
+      <input ref={scanRef} type="file" accept="image/*" capture="environment" onChange={handleScanFile} style={{ display: "none" }} />
 
       {/* Header */}
       <div style={{ padding: "22px 20px 16px", maxWidth: 1100, margin: "0 auto" }}>
@@ -880,6 +946,11 @@ export default function BBInventory() {
               background: COLORS.good, border: "none", color: "#fff", fontSize: 15, fontWeight: 800,
               boxShadow: "0 2px 8px rgba(91,123,74,0.3)",
             }}>📷 Sell</button>
+            <button onClick={() => scanRef.current?.click()} style={{
+              display: "flex", alignItems: "center", gap: 8, padding: "0 18px", height: 44, borderRadius: 12,
+              background: COLORS.info, border: "none", color: "#fff", fontSize: 15, fontWeight: 800,
+              boxShadow: "0 2px 8px rgba(62,107,138,0.3)",
+            }}>📷 Scan to Add</button>
             <button onClick={() => openAdd(activeType !== "all" ? activeType : "box")} style={{
               display: "flex", alignItems: "center", gap: 8, padding: "0 20px", height: 44, borderRadius: 12,
               background: COLORS.amber, border: "none", color: "#fff", fontSize: 15, fontWeight: 800,
