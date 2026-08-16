@@ -61,6 +61,90 @@ function saveSales(sales) {
   try { localStorage.setItem(SALES_KEY, JSON.stringify(sales.slice(0, MAX_SALES))); } catch {}
 }
 
+function readFileAsArrayBuffer(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = reject;
+    r.readAsArrayBuffer(file);
+  });
+}
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = reject;
+    r.readAsDataURL(file);
+  });
+}
+function loadImageEl(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = dataUrl;
+  });
+}
+// Phone/tablet cameras often save pixels sideways and rely on an EXIF tag to say how to
+// rotate them for display — that tag gets lost once we redraw onto a canvas, so read it here first.
+function getExifOrientation(buffer) {
+  try {
+    const view = new DataView(buffer);
+    if (view.getUint16(0, false) !== 0xFFD8) return 1;
+    const length = view.byteLength;
+    let offset = 2;
+    while (offset < length - 1) {
+      const marker = view.getUint16(offset, false);
+      offset += 2;
+      if (marker === 0xFFE1) {
+        if (view.getUint32(offset + 2, false) !== 0x45786966) return 1;
+        const tiffOffset = offset + 8;
+        const little = view.getUint16(tiffOffset, false) === 0x4949;
+        const firstIFDOffset = view.getUint32(tiffOffset + 4, little);
+        const dirStart = tiffOffset + firstIFDOffset;
+        const entries = view.getUint16(dirStart, little);
+        for (let i = 0; i < entries; i++) {
+          const entryOffset = dirStart + 2 + i * 12;
+          if (view.getUint16(entryOffset, little) === 0x0112) return view.getUint16(entryOffset + 8, little);
+        }
+        return 1;
+      } else if ((marker & 0xFF00) !== 0xFF00) {
+        break;
+      } else {
+        offset += view.getUint16(offset, false);
+      }
+    }
+  } catch (_) {}
+  return 1;
+}
+// Reads a photo file and returns an upright JPEG data URL, correcting EXIF rotation up front
+// so every later resize/compress step (which draws to a canvas and drops that metadata) stays correct.
+async function readUprightDataUrl(file) {
+  let orientation = 1;
+  try { orientation = getExifOrientation(await readFileAsArrayBuffer(file)); } catch (_) {}
+  const dataUrl = await readFileAsDataUrl(file);
+  if (orientation === 1) return dataUrl;
+  const img = await loadImageEl(dataUrl);
+  const w = img.naturalWidth, h = img.naturalHeight;
+  const swapped = orientation >= 5 && orientation <= 8;
+  const c = document.createElement("canvas");
+  c.width = swapped ? h : w;
+  c.height = swapped ? w : h;
+  const ctx = c.getContext("2d");
+  switch (orientation) {
+    case 2: ctx.transform(-1, 0, 0, 1, w, 0); break;
+    case 3: ctx.transform(-1, 0, 0, -1, w, h); break;
+    case 4: ctx.transform(1, 0, 0, -1, 0, h); break;
+    case 5: ctx.transform(0, 1, 1, 0, 0, 0); break;
+    case 6: ctx.transform(0, 1, -1, 0, h, 0); break;
+    case 7: ctx.transform(0, -1, -1, 0, h, w); break;
+    case 8: ctx.transform(0, -1, 1, 0, 0, w); break;
+    default: break;
+  }
+  ctx.drawImage(img, 0, 0);
+  return c.toDataURL("image/jpeg", 0.92);
+}
+
 async function toJpegBase64(dataUrl, maxDim = 1280) {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -250,19 +334,18 @@ function ItemModal({ draft, onChange, onSave, onDelete, onClose, isNew, banner }
     fontSize: 15, color: COLORS.text, background: COLORS.bg, fontFamily: "inherit",
   };
 
-  function handlePhotoFile(e) {
+  async function handlePhotoFile(e) {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
     setPhotoBusy(true);
-    const reader = new FileReader();
-    reader.onload = async evt => {
-      const compressed = await toItemPhoto(evt.target.result);
+    try {
+      const upright = await readUprightDataUrl(file);
+      const compressed = await toItemPhoto(upright);
       onChange({ ...draft, photo: compressed });
+    } finally {
       setPhotoBusy(false);
-    };
-    reader.onerror = () => setPhotoBusy(false);
-    reader.readAsDataURL(file);
+    }
   }
 
   return (
@@ -425,33 +508,29 @@ function SellModal({ items, onConfirm, onClose }) {
     e.target.value = "";
     if (!file) return;
     setSelected(null); setMatches([]); setAiNote(""); setManualSearch("");
-    const reader = new FileReader();
-    reader.onload = async evt => {
-      const dataUrl = evt.target.result;
-      setPhotoDataUrl(dataUrl);
-      setStatus("identifying");
-      try {
-        const base64 = await toJpegBase64(dataUrl);
-        const catalog = items.map(i => ({ id: i.id, name: i.name, set: i.set, type: i.type, photo: i.photo ? i.photo.split(",")[1] : null }));
-        const resp = await fetch("/api/identify", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ base64, catalog }),
-        });
-        const data = await resp.json().catch(() => ({}));
-        const found = (data.matches || [])
-          .map(m => ({ item: items.find(i => i.id === m.id), confidence: m.confidence, reason: m.reason }))
-          .filter(m => m.item)
-          .slice(0, 5);
-        setMatches(found);
-        if (data.aiAvailable === false) setAiNote("AI matching isn't configured for this shop yet — search for the item below.");
-        else if (found.length === 0) setAiNote("No confident match found — search for the item below.");
-      } catch {
-        setAiNote("Couldn't reach the matching service — search for the item below.");
-      } finally {
-        setStatus("ready");
-      }
-    };
-    reader.readAsDataURL(file);
+    setStatus("identifying");
+    const dataUrl = await readUprightDataUrl(file);
+    setPhotoDataUrl(dataUrl);
+    try {
+      const base64 = await toJpegBase64(dataUrl);
+      const catalog = items.map(i => ({ id: i.id, name: i.name, set: i.set, type: i.type, photo: i.photo ? i.photo.split(",")[1] : null }));
+      const resp = await fetch("/api/identify", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ base64, catalog }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      const found = (data.matches || [])
+        .map(m => ({ item: items.find(i => i.id === m.id), confidence: m.confidence, reason: m.reason }))
+        .filter(m => m.item)
+        .slice(0, 5);
+      setMatches(found);
+      if (data.aiAvailable === false) setAiNote("AI matching isn't configured for this shop yet — search for the item below.");
+      else if (found.length === 0) setAiNote("No confident match found — search for the item below.");
+    } catch {
+      setAiNote("Couldn't reach the matching service — search for the item below.");
+    } finally {
+      setStatus("ready");
+    }
   }
 
   function retake() {
@@ -745,51 +824,47 @@ export default function BBInventory() {
   function openEdit(item) { setDraft({ ...item, game: item.game || inferGame(item), cost: item.cost ?? "", price: item.price ?? "" }); setScanBanner(""); setIsNew(false); }
   function closeModal() { setDraft(null); setScanBanner(""); }
 
-  function handleScanFile(e) {
+  async function handleScanFile(e) {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
     setScanning(true);
-    const reader = new FileReader();
-    reader.onload = async evt => {
-      const dataUrl = evt.target.result;
-      let extracted = null;
-      try {
-        const base64 = await toJpegBase64(dataUrl);
-        const resp = await fetch("/api/scan-item", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ base64 }),
-        });
-        extracted = await resp.json().catch(() => null);
-      } catch { extracted = null; }
-
-      const photo = await toItemPhoto(dataUrl);
-      const type = extracted?.type && TYPE_MAP[extracted.type] ? extracted.type : "single";
-      const base = emptyDraft(type);
-      const gotFields = extracted && extracted.aiAvailable !== false && (extracted.name || extracted.set);
-
-      setDraft({
-        ...base,
-        type,
-        game: extracted?.game && GAME_MAP[extracted.game] ? extracted.game : "",
-        name: extracted?.name || "",
-        set: extracted?.set || "",
-        condition: extracted?.condition || base.condition,
-        notes: extracted?.notes || "",
-        photo,
+    const dataUrl = await readUprightDataUrl(file);
+    let extracted = null;
+    try {
+      const base64 = await toJpegBase64(dataUrl);
+      const resp = await fetch("/api/scan-item", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ base64 }),
       });
+      extracted = await resp.json().catch(() => null);
+    } catch { extracted = null; }
 
-      if (!extracted || extracted.aiAvailable === false) {
-        setScanBanner("📷 Photo attached. AI reading isn't configured for this shop yet — fill in the details below.");
-      } else if (!gotFields || (extracted.confidence ?? 0) < 0.4) {
-        setScanBanner("📷 Photo attached, but the scan wasn't confident — please check the details below carefully.");
-      } else {
-        setScanBanner("✨ Auto-filled from the photo — double-check before saving, especially price and quantity.");
-      }
-      setIsNew(true);
-      setScanning(false);
-    };
-    reader.readAsDataURL(file);
+    const photo = await toItemPhoto(dataUrl);
+    const type = extracted?.type && TYPE_MAP[extracted.type] ? extracted.type : "single";
+    const base = emptyDraft(type);
+    const gotFields = extracted && extracted.aiAvailable !== false && (extracted.name || extracted.set);
+
+    setDraft({
+      ...base,
+      type,
+      game: extracted?.game && GAME_MAP[extracted.game] ? extracted.game : "",
+      name: extracted?.name || "",
+      set: extracted?.set || "",
+      condition: extracted?.condition || base.condition,
+      notes: extracted?.notes || "",
+      photo,
+    });
+
+    if (!extracted || extracted.aiAvailable === false) {
+      setScanBanner("📷 Photo attached. AI reading isn't configured for this shop yet — fill in the details below.");
+    } else if (!gotFields || (extracted.confidence ?? 0) < 0.4) {
+      setScanBanner("📷 Photo attached, but the scan wasn't confident — please check the details below carefully.");
+    } else {
+      setScanBanner("✨ Auto-filled from the photo — double-check before saving, especially price and quantity.");
+    }
+    setIsNew(true);
+    setScanning(false);
   }
 
   function saveDraft() {
