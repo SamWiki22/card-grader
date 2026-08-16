@@ -1,10 +1,9 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { supabase } from "../lib/supabaseClient";
 
 // ── Data / constants ──────────────────────────────────────────────────────
 
-const STORAGE_KEY = "bb-inventory-items-v1";
-const SALES_KEY = "bb-inventory-sales-v1";
-const LAST_SOLD_BY_KEY = "bb-inventory-last-sold-by";
+const LAST_SOLD_BY_KEY = "bb-inventory-last-sold-by"; // per-device UI convenience only, not shop data
 const MAX_SALES = 300;
 
 const TYPES = [
@@ -38,27 +37,76 @@ const CONDITIONS = ["NM", "LP", "MP", "HP", "DMG"];
 
 const DEFAULT_LOW_STOCK = 2;
 
-function loadItems() {
-  try {
-    const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
-    return Array.isArray(raw) ? raw : [];
-  } catch { return []; }
-}
-function saveItems(items) {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(items)); } catch {}
-}
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
 function money(n) { return "$" + (Number(n) || 0).toFixed(2); }
 function clampQty(n) { return Math.max(0, Math.round(Number(n) || 0)); }
 
-function loadSales() {
-  try {
-    const raw = JSON.parse(localStorage.getItem(SALES_KEY) || "[]");
-    return Array.isArray(raw) ? raw : [];
-  } catch { return []; }
+// ── Supabase row <-> app object mapping ─────────────────────────────────
+// The DB uses snake_case columns (and "set_name" since "set" is awkward in SQL);
+// the rest of this app keeps working with the same camelCase shape as before.
+
+function itemFromRow(row) {
+  return {
+    id: row.id,
+    type: row.type,
+    game: row.game || "",
+    name: row.name || "",
+    set: row.set_name || "",
+    sku: row.sku || "",
+    condition: row.condition || "",
+    quantity: row.quantity ?? 0,
+    cost: row.cost ?? 0,
+    price: row.price ?? 0,
+    lowStock: row.low_stock ?? 0,
+    notes: row.notes || "",
+    photo: row.photo || null,
+  };
 }
-function saveSales(sales) {
-  try { localStorage.setItem(SALES_KEY, JSON.stringify(sales.slice(0, MAX_SALES))); } catch {}
+function itemToRow(item) {
+  return {
+    id: item.id,
+    type: item.type,
+    game: item.game || "",
+    name: item.name || "",
+    set_name: item.set || "",
+    sku: item.sku || "",
+    condition: item.condition || "",
+    quantity: clampQty(item.quantity),
+    cost: Number(item.cost) || 0,
+    price: Number(item.price) || 0,
+    low_stock: clampQty(item.lowStock),
+    notes: item.notes || "",
+    photo: item.photo || null,
+  };
+}
+function saleFromRow(row) {
+  return {
+    id: row.id,
+    timestamp: row.created_at ? new Date(row.created_at).getTime() : Date.now(),
+    itemId: row.item_id,
+    itemName: row.item_name || "",
+    itemSet: row.item_set || "",
+    itemType: row.item_type || "",
+    quantity: row.quantity ?? 0,
+    price: row.price ?? 0,
+    total: row.total ?? 0,
+    soldBy: row.sold_by || "",
+    thumbnail: row.thumbnail || null,
+  };
+}
+function saleToRow(sale) {
+  return {
+    id: sale.id,
+    item_id: sale.itemId,
+    item_name: sale.itemName || "",
+    item_set: sale.itemSet || "",
+    item_type: sale.itemType || "",
+    quantity: sale.quantity,
+    price: sale.price,
+    total: sale.total,
+    sold_by: sale.soldBy || "",
+    thumbnail: sale.thumbnail || null,
+  };
 }
 
 function readFileAsArrayBuffer(file) {
@@ -712,7 +760,7 @@ function SalesLogModal({ sales, onVoid, onExportCSV, onClose }) {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
           <div>
             <div style={{ fontSize: 22, fontWeight: 900, color: COLORS.text }}>🧾 Sales Log</div>
-            <div style={{ fontSize: 12, color: COLORS.textDim, marginTop: 2 }}>{sales.length} sale{sales.length !== 1 ? "s" : ""} · stored on this device</div>
+            <div style={{ fontSize: 12, color: COLORS.textDim, marginTop: 2 }}>{sales.length} sale{sales.length !== 1 ? "s" : ""} · synced across all devices</div>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <IconButton title="Export CSV" onClick={onExportCSV}>⬇️</IconButton>
@@ -775,9 +823,56 @@ export default function BBInventory() {
   const importRef = useRef();
   const scanRef = useRef();
 
-  useEffect(() => { setItems(loadItems()); setSales(loadSales()); setLoaded(true); }, []);
-  useEffect(() => { if (loaded) saveItems(items); }, [items, loaded]);
-  useEffect(() => { if (loaded) saveSales(sales); }, [sales, loaded]);
+  useEffect(() => {
+    if (!supabase) { setLoaded(true); return; }
+    let active = true;
+
+    (async () => {
+      try {
+        const [itemsRes, salesRes] = await Promise.all([
+          supabase.from("items").select("*"),
+          supabase.from("sales").select("*").order("created_at", { ascending: false }).limit(MAX_SALES),
+        ]);
+        if (!active) return;
+        if (!itemsRes.error) setItems((itemsRes.data || []).map(itemFromRow));
+        if (!salesRes.error) setSales((salesRes.data || []).map(saleFromRow));
+      } catch (err) {
+        console.error("Failed to load inventory from Supabase", err);
+      } finally {
+        if (active) setLoaded(true);
+      }
+    })();
+
+    const itemsChannel = supabase.channel("items-changes")
+      .on("postgres_changes", { event: "*", schema: "public", table: "items" }, payload => {
+        setItems(prev => {
+          if (payload.eventType === "DELETE") return prev.filter(i => i.id !== payload.old.id);
+          const updated = itemFromRow(payload.new);
+          const idx = prev.findIndex(i => i.id === updated.id);
+          if (idx === -1) return [...prev, updated];
+          const next = [...prev]; next[idx] = updated; return next;
+        });
+      })
+      .subscribe();
+
+    const salesChannel = supabase.channel("sales-changes")
+      .on("postgres_changes", { event: "*", schema: "public", table: "sales" }, payload => {
+        setSales(prev => {
+          if (payload.eventType === "DELETE") return prev.filter(s => s.id !== payload.old.id);
+          const updated = saleFromRow(payload.new);
+          const idx = prev.findIndex(s => s.id === updated.id);
+          if (idx === -1) return [updated, ...prev].sort((a, b) => b.timestamp - a.timestamp);
+          const next = [...prev]; next[idx] = updated; return next;
+        });
+      })
+      .subscribe();
+
+    return () => {
+      active = false;
+      supabase.removeChannel(itemsChannel);
+      supabase.removeChannel(salesChannel);
+    };
+  }, []);
 
   const filtered = useMemo(() => {
     let list = items;
@@ -867,7 +962,7 @@ export default function BBInventory() {
     setScanning(false);
   }
 
-  function saveDraft() {
+  async function saveDraft() {
     const clean = {
       ...draft,
       name: draft.name.trim(),
@@ -878,25 +973,40 @@ export default function BBInventory() {
       cost: Number(draft.cost) || 0,
       price: Number(draft.price) || 0,
       lowStock: clampQty(draft.lowStock),
-      updatedAt: Date.now(),
     };
     if (isNew) {
-      setItems(prev => [...prev, { ...clean, id: uid(), createdAt: Date.now() }]);
+      const withId = { ...clean, id: uid() };
+      setItems(prev => [...prev, withId]);
+      closeModal();
+      const { error } = await supabase.from("items").insert(itemToRow(withId));
+      if (error) { alert("Couldn't save to the database: " + error.message); setItems(prev => prev.filter(i => i.id !== withId.id)); }
     } else {
       setItems(prev => prev.map(i => (i.id === clean.id ? clean : i)));
+      closeModal();
+      const { error } = await supabase.from("items").update(itemToRow(clean)).eq("id", clean.id);
+      if (error) alert("Couldn't save changes to the database: " + error.message);
     }
-    closeModal();
   }
 
-  function deleteDraft() {
+  async function deleteDraft() {
     if (!draft?.id) return;
     if (!window.confirm(`Delete "${draft.name || "this item"}" from inventory?`)) return;
-    setItems(prev => prev.filter(i => i.id !== draft.id));
+    const id = draft.id;
+    setItems(prev => prev.filter(i => i.id !== id));
     closeModal();
+    const { error } = await supabase.from("items").delete().eq("id", id);
+    if (error) alert("Couldn't delete from the database: " + error.message);
   }
 
-  const adjustQty = useCallback((id, delta) => {
-    setItems(prev => prev.map(i => (i.id === id ? { ...i, quantity: clampQty(i.quantity + delta), updatedAt: Date.now() } : i)));
+  const adjustQty = useCallback(async (id, delta) => {
+    let newQty = 0;
+    setItems(prev => prev.map(i => {
+      if (i.id !== id) return i;
+      newQty = clampQty(i.quantity + delta);
+      return { ...i, quantity: newQty };
+    }));
+    const { error } = await supabase.from("items").update({ quantity: newQty }).eq("id", id);
+    if (error) console.error("Failed to sync quantity:", error.message);
   }, []);
 
   function exportJSON() {
@@ -921,7 +1031,8 @@ export default function BBInventory() {
   }
 
   async function handleConfirmSale({ item, qty, price, soldBy, photoDataUrl }) {
-    setItems(prev => prev.map(i => (i.id === item.id ? { ...i, quantity: clampQty(i.quantity - qty), updatedAt: Date.now() } : i)));
+    const newQty = clampQty(item.quantity - qty);
+    setItems(prev => prev.map(i => (i.id === item.id ? { ...i, quantity: newQty } : i)));
     const thumbnail = photoDataUrl ? await toThumbnail(photoDataUrl) : null;
     const sale = {
       id: uid(), timestamp: Date.now(), itemId: item.id, itemName: item.name, itemSet: item.set, itemType: item.type,
@@ -929,14 +1040,23 @@ export default function BBInventory() {
     };
     setSales(prev => [sale, ...prev].slice(0, MAX_SALES));
     setShowSell(false);
+    const [itemRes, saleRes] = await Promise.all([
+      supabase.from("items").update({ quantity: newQty }).eq("id", item.id),
+      supabase.from("sales").insert(saleToRow(sale)),
+    ]);
+    if (itemRes.error || saleRes.error) alert("Sale saved on screen but failed to sync to the database — check your connection and try again if it doesn't show up elsewhere.");
   }
 
-  function voidSale(saleId) {
+  async function voidSale(saleId) {
     const sale = sales.find(s => s.id === saleId);
     if (!sale) return;
     if (!window.confirm(`Void this sale (${sale.quantity} × ${sale.itemName}) and restore the stock?`)) return;
     setSales(prev => prev.filter(s => s.id !== saleId));
-    setItems(prev => prev.map(i => (i.id === sale.itemId ? { ...i, quantity: clampQty(i.quantity + sale.quantity), updatedAt: Date.now() } : i)));
+    const item = items.find(i => i.id === sale.itemId);
+    const newQty = item ? clampQty(item.quantity + sale.quantity) : null;
+    if (item) setItems(prev => prev.map(i => (i.id === sale.itemId ? { ...i, quantity: newQty } : i)));
+    await supabase.from("sales").delete().eq("id", saleId);
+    if (item) await supabase.from("items").update({ quantity: newQty }).eq("id", sale.itemId);
   }
 
   function exportSalesCSV() {
@@ -956,18 +1076,45 @@ export default function BBInventory() {
     e.target.value = "";
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = evt => {
+    reader.onload = async evt => {
       try {
         const parsed = JSON.parse(evt.target.result);
         if (!Array.isArray(parsed)) throw new Error("not an array");
         if (!window.confirm(`Import ${parsed.length} item(s) and add them to your current inventory?`)) return;
-        const imported = parsed.map(p => ({ ...emptyDraft(p.type || "box"), ...p, id: uid(), createdAt: Date.now(), updatedAt: Date.now() }));
+        const imported = parsed.map(p => ({ ...emptyDraft(p.type || "box"), ...p, id: uid() }));
         setItems(prev => [...prev, ...imported]);
+        const { error } = await supabase.from("items").insert(imported.map(itemToRow));
+        if (error) alert("Import showed up on screen but failed to save to the database: " + error.message);
       } catch {
         alert("Could not read that file. Make sure it's a BB Inventory JSON backup.");
       }
     };
     reader.readAsText(file);
+  }
+
+  if (!supabase) {
+    return (
+      <div style={{ minHeight: "100vh", background: COLORS.bg, color: COLORS.text, fontFamily: "'Segoe UI', system-ui, -apple-system, sans-serif", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+        <div style={{ textAlign: "center", maxWidth: 420 }}>
+          <div style={{ fontSize: 48, marginBottom: 14 }}>🐻</div>
+          <div style={{ fontSize: 20, fontWeight: 800, marginBottom: 8 }}>Database not connected</div>
+          <div style={{ fontSize: 14, color: COLORS.textDim, lineHeight: 1.6 }}>
+            This deployment is missing its Supabase environment variables (<code>NEXT_PUBLIC_SUPABASE_URL</code> and <code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code>). Add them in your hosting provider's project settings and redeploy.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!loaded) {
+    return (
+      <div style={{ minHeight: "100vh", background: COLORS.bg, color: COLORS.text, fontFamily: "'Segoe UI', system-ui, -apple-system, sans-serif", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div style={{ textAlign: "center" }}>
+          <div style={{ fontSize: 40, marginBottom: 10 }}>🐻</div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: COLORS.textDim }}>Loading inventory…</div>
+        </div>
+      </div>
+    );
   }
 
   return (
