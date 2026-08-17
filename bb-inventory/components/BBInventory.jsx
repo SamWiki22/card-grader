@@ -24,6 +24,13 @@ const GAMES = [
 ];
 const GAME_MAP = Object.fromEntries(GAMES.map(g => [g.id, g]));
 
+const OWNERS = [
+  { id: "sam", label: "Sam", icon: "🧔" },
+  { id: "bear_umer", label: "Bear/Umer", icon: "🐻" },
+  { id: "shared", label: "Shared 50/50", icon: "🤝" },
+];
+const OWNER_MAP = Object.fromEntries(OWNERS.map(o => [o.id, o]));
+
 function inferGame(item) {
   if (item.game && GAME_MAP[item.game]) return item.game;
   const text = ((item.set || "") + " " + (item.name || "")).toLowerCase();
@@ -50,6 +57,7 @@ function itemFromRow(row) {
     id: row.id,
     type: row.type,
     game: row.game || "",
+    owner: row.owner || "",
     name: row.name || "",
     set: row.set_name || "",
     sku: row.sku || "",
@@ -67,6 +75,7 @@ function itemToRow(item) {
     id: item.id,
     type: item.type,
     game: item.game || "",
+    owner: item.owner || "",
     name: item.name || "",
     set_name: item.set || "",
     sku: item.sku || "",
@@ -87,6 +96,8 @@ function saleFromRow(row) {
     itemName: row.item_name || "",
     itemSet: row.item_set || "",
     itemType: row.item_type || "",
+    owner: row.owner || "",
+    itemCost: row.item_cost ?? 0,
     quantity: row.quantity ?? 0,
     price: row.price ?? 0,
     total: row.total ?? 0,
@@ -101,6 +112,8 @@ function saleToRow(sale) {
     item_name: sale.itemName || "",
     item_set: sale.itemSet || "",
     item_type: sale.itemType || "",
+    owner: sale.owner || "",
+    item_cost: Number(sale.itemCost) || 0,
     quantity: sale.quantity,
     price: sale.price,
     total: sale.total,
@@ -238,6 +251,7 @@ function emptyDraft(type = "box") {
     id: null,
     type,
     game: "",
+    owner: "",
     name: "",
     set: "",
     sku: "",
@@ -320,6 +334,7 @@ function ItemCard({ item, onAdjust, onOpen }) {
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             <Badge color={t.color} soft={t.color + "14"}>{t.icon} {t.singular}</Badge>
             {g.id !== "other" && <Badge color={COLORS.textDim} soft="rgba(43,27,18,0.05)">{g.icon} {g.label}</Badge>}
+            {OWNER_MAP[item.owner] && <Badge color={COLORS.info} soft={COLORS.infoSoft}>{OWNER_MAP[item.owner].icon} {OWNER_MAP[item.owner].label}</Badge>}
           </div>
           {out ? <Badge color={COLORS.danger} soft={COLORS.dangerSoft}>OUT OF STOCK</Badge>
             : low ? <Badge color={COLORS.danger} soft={COLORS.dangerSoft}>LOW STOCK</Badge> : null}
@@ -435,6 +450,19 @@ function ItemModal({ draft, onChange, onSave, onDelete, onClose, isNew, banner }
                 border: `1.5px solid ${draft.game === g.id ? COLORS.amber + "70" : COLORS.border}`,
                 color: draft.game === g.id ? COLORS.amberDark : COLORS.textDim,
               }}>{g.icon} {g.label}</button>
+            ))}
+          </div>
+        ))}
+
+        {field("OWNER — WHO PAID FOR THIS", (
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {OWNERS.map(o => (
+              <button key={o.id} onClick={() => onChange({ ...draft, owner: draft.owner === o.id ? "" : o.id })} style={{
+                padding: "9px 12px", borderRadius: 10, fontSize: 12, fontWeight: 700,
+                background: draft.owner === o.id ? COLORS.infoSoft : COLORS.bg,
+                border: `1.5px solid ${draft.owner === o.id ? COLORS.info + "70" : COLORS.border}`,
+                color: draft.owner === o.id ? COLORS.info : COLORS.textDim,
+              }}>{o.icon} {o.label}</button>
             ))}
           </div>
         ))}
@@ -805,6 +833,76 @@ function SalesLogModal({ sales, onVoid, onExportCSV, onClose }) {
   );
 }
 
+// ── Partner settlement modal ────────────────────────────────────────────
+// Reads each item's/sale's `owner` tag to show, per partner, how much of their
+// money is still sitting in unsold stock vs. how much has come back via sales.
+// "Shared 50/50" items are split evenly into both partners' totals.
+
+function SettlementModal({ items, sales, onClose }) {
+  const totals = useMemo(() => {
+    const base = () => ({ stockCost: 0, revenue: 0, cogs: 0 });
+    const raw = { sam: base(), bear_umer: base(), shared: base() };
+    for (const i of items) {
+      if (raw[i.owner]) raw[i.owner].stockCost += i.quantity * (Number(i.cost) || 0);
+    }
+    for (const s of sales) {
+      if (raw[s.owner]) {
+        raw[s.owner].revenue += s.total;
+        raw[s.owner].cogs += (Number(s.itemCost) || 0) * s.quantity;
+      }
+    }
+    const half = { stockCost: raw.shared.stockCost / 2, revenue: raw.shared.revenue / 2, cogs: raw.shared.cogs / 2 };
+    const combine = a => ({ stockCost: a.stockCost + half.stockCost, revenue: a.revenue + half.revenue, cogs: a.cogs + half.cogs });
+    const unassignedStock = items.filter(i => !OWNER_MAP[i.owner]).reduce((s, i) => s + i.quantity * (Number(i.cost) || 0), 0);
+    return { sam: combine(raw.sam), bear_umer: combine(raw.bear_umer), unassignedStock };
+  }, [items, sales]);
+
+  const Row = ({ label, icon, data }) => {
+    const profit = data.revenue - data.cogs;
+    const tile = (tileLabel, value, color) => (
+      <div style={{ flex: "1 1 140px" }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: COLORS.textDim, textTransform: "uppercase", letterSpacing: 0.4 }}>{tileLabel}</div>
+        <div style={{ fontSize: 20, fontWeight: 800, color }}>{money(value)}</div>
+      </div>
+    );
+    return (
+      <div style={{ border: `1.5px solid ${COLORS.border}`, borderRadius: 16, padding: 18, marginBottom: 14 }}>
+        <div style={{ fontSize: 16, fontWeight: 800, color: COLORS.text, marginBottom: 12 }}>{icon} {label}</div>
+        <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+          {tile("Tied up in stock", data.stockCost, COLORS.amberDark)}
+          {tile("Recovered from sales", data.revenue, COLORS.info)}
+          {tile("Profit so far", profit, profit >= 0 ? COLORS.good : COLORS.danger)}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(43,27,18,0.45)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center" }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{
+        width: "100%", maxWidth: 560, maxHeight: "92vh", overflowY: "auto", background: COLORS.panel,
+        borderRadius: "24px 24px 0 0", padding: "22px 22px 32px", boxShadow: "0 -10px 40px rgba(43,27,18,0.2)",
+      }}>
+        <div style={{ width: 40, height: 4, background: COLORS.border, borderRadius: 2, margin: "0 auto 18px" }} />
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+          <div style={{ fontSize: 20, fontWeight: 800, color: COLORS.text }}>🤝 Partner Settlement</div>
+          <button onClick={onClose} style={{ width: 40, height: 40, borderRadius: 10, border: `1px solid ${COLORS.border}`, background: COLORS.bg, fontSize: 16 }}>✕</button>
+        </div>
+        <div style={{ fontSize: 13, color: COLORS.textDim, marginBottom: 18, lineHeight: 1.5 }}>
+          "Tied up in stock" is what each partner spent that's still sitting unsold on the shelf. "Recovered" is total sale revenue from items they funded. Items tagged Shared 50/50 are split evenly into both totals below.
+        </div>
+        <Row label="Sam" icon="🧔" data={totals.sam} />
+        <Row label="Bear/Umer" icon="🐻" data={totals.bear_umer} />
+        {totals.unassignedStock > 0 && (
+          <div style={{ fontSize: 12, color: COLORS.textFaint, marginTop: 4, lineHeight: 1.5 }}>
+            ⚠️ {money(totals.unassignedStock)} of stock cost isn't tagged to an owner yet — open those items and set Owner to Sam, Bear/Umer, or Shared to include them here.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Main app ─────────────────────────────────────────────────────────────
 
 export default function BBInventory() {
@@ -813,11 +911,13 @@ export default function BBInventory() {
   const [loaded, setLoaded] = useState(false);
   const [activeType, setActiveType] = useState("all");
   const [activeGame, setActiveGame] = useState("all");
+  const [activeOwner, setActiveOwner] = useState("all");
   const [search, setSearch] = useState("");
   const [draft, setDraft] = useState(null);
   const [isNew, setIsNew] = useState(false);
   const [showSell, setShowSell] = useState(false);
   const [showSalesLog, setShowSalesLog] = useState(false);
+  const [showSettlement, setShowSettlement] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [scanBanner, setScanBanner] = useState("");
   const importRef = useRef();
@@ -878,6 +978,9 @@ export default function BBInventory() {
     let list = items;
     if (activeType !== "all") list = list.filter(i => i.type === activeType);
     if (activeGame !== "all") list = list.filter(i => inferGame(i) === activeGame);
+    if (activeOwner !== "all") {
+      list = activeOwner === "unassigned" ? list.filter(i => !OWNER_MAP[i.owner]) : list.filter(i => i.owner === activeOwner);
+    }
     const q = search.trim().toLowerCase();
     if (q) list = list.filter(i => (i.name + " " + i.set + " " + i.sku).toLowerCase().includes(q));
     return [...list].sort((a, b) => {
@@ -886,7 +989,7 @@ export default function BBInventory() {
       if (aLow !== bLow) return aLow ? -1 : 1;
       return a.name.localeCompare(b.name);
     });
-  }, [items, activeType, activeGame, search]);
+  }, [items, activeType, activeGame, activeOwner, search]);
 
   const stats = useMemo(() => {
     const totalUnits = items.reduce((s, i) => s + i.quantity, 0);
@@ -906,6 +1009,15 @@ export default function BBInventory() {
     const c = { all: items.length };
     for (const g of GAMES) c[g.id] = 0;
     for (const i of items) c[inferGame(i)]++;
+    return c;
+  }, [items]);
+
+  const ownerCounts = useMemo(() => {
+    const c = { all: items.length, unassigned: 0 };
+    for (const o of OWNERS) c[o.id] = 0;
+    for (const i of items) {
+      if (OWNER_MAP[i.owner]) c[i.owner]++; else c.unassigned++;
+    }
     return c;
   }, [items]);
 
@@ -1019,9 +1131,13 @@ export default function BBInventory() {
   }
 
   function exportCSV() {
-    const cols = ["type", "game", "name", "set", "condition", "sku", "quantity", "cost", "price", "lowStock", "notes"];
+    const cols = ["type", "game", "owner", "name", "set", "condition", "sku", "quantity", "cost", "price", "lowStock", "notes"];
     const esc = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
-    const rows = [cols.join(",")].concat(items.map(i => cols.map(c => esc(c === "game" ? GAME_MAP[inferGame(i)].label : i[c])).join(",")));
+    const rows = [cols.join(",")].concat(items.map(i => cols.map(c => {
+      if (c === "game") return esc(GAME_MAP[inferGame(i)].label);
+      if (c === "owner") return esc(OWNER_MAP[i.owner]?.label || "");
+      return esc(i[c]);
+    }).join(",")));
     const blob = new Blob([rows.join("\n")], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -1036,6 +1152,7 @@ export default function BBInventory() {
     const thumbnail = photoDataUrl ? await toThumbnail(photoDataUrl) : null;
     const sale = {
       id: uid(), timestamp: Date.now(), itemId: item.id, itemName: item.name, itemSet: item.set, itemType: item.type,
+      owner: item.owner || "", itemCost: Number(item.cost) || 0,
       quantity: qty, price, total: price * qty, soldBy, thumbnail,
     };
     setSales(prev => [sale, ...prev].slice(0, MAX_SALES));
@@ -1060,9 +1177,13 @@ export default function BBInventory() {
   }
 
   function exportSalesCSV() {
-    const cols = ["timestamp", "itemName", "itemSet", "itemType", "quantity", "price", "total", "soldBy"];
+    const cols = ["timestamp", "itemName", "itemSet", "itemType", "owner", "quantity", "price", "total", "soldBy"];
     const esc = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
-    const rows = [cols.join(",")].concat(sales.map(s => cols.map(c => esc(c === "timestamp" ? new Date(s.timestamp).toLocaleString() : s[c])).join(",")));
+    const rows = [cols.join(",")].concat(sales.map(s => cols.map(c => {
+      if (c === "timestamp") return esc(new Date(s.timestamp).toLocaleString());
+      if (c === "owner") return esc(OWNER_MAP[s.owner]?.label || "");
+      return esc(s[c]);
+    }).join(",")));
     const blob = new Blob([rows.join("\n")], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -1136,6 +1257,9 @@ export default function BBInventory() {
       {showSalesLog && (
         <SalesLogModal sales={sales} onVoid={voidSale} onExportCSV={exportSalesCSV} onClose={() => setShowSalesLog(false)} />
       )}
+      {showSettlement && (
+        <SettlementModal items={items} sales={sales} onClose={() => setShowSettlement(false)} />
+      )}
       {scanning && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(43,27,18,0.55)", zIndex: 250, display: "flex", alignItems: "center", justifyContent: "center" }}>
           <div style={{ background: COLORS.panel, borderRadius: 20, padding: "32px 40px", textAlign: "center", boxShadow: "0 10px 40px rgba(43,27,18,0.3)" }}>
@@ -1163,6 +1287,7 @@ export default function BBInventory() {
             <IconButton title="Export JSON backup" onClick={exportJSON}>💾</IconButton>
             <IconButton title="Import JSON backup" onClick={() => importRef.current?.click()}>⬆️</IconButton>
             <IconButton title="Sales log" onClick={() => setShowSalesLog(true)}>🧾</IconButton>
+            <IconButton title="Partner settlement" onClick={() => setShowSettlement(true)}>🤝</IconButton>
             <button onClick={() => setShowSell(true)} style={{
               display: "flex", alignItems: "center", gap: 8, padding: "0 18px", height: 44, borderRadius: 12,
               background: COLORS.good, border: "none", color: "#fff", fontSize: 15, fontWeight: 800,
@@ -1215,6 +1340,17 @@ export default function BBInventory() {
             border: `1.5px solid ${activeGame === g.id ? COLORS.amber + "70" : COLORS.border}`,
             color: activeGame === g.id ? COLORS.amberDark : COLORS.textFaint,
           }}>{g.icon} {g.label} ({gameCounts[g.id] ?? 0})</button>
+        ))}
+      </div>
+
+      <div style={{ padding: "0 20px 18px", maxWidth: 1100, margin: "0 auto", display: "flex", gap: 6, flexWrap: "wrap" }}>
+        {[{ id: "all", label: "All Owners", icon: "🗂️" }, ...OWNERS, { id: "unassigned", label: "Unassigned", icon: "❔" }].map(o => (
+          <button key={o.id} onClick={() => setActiveOwner(o.id)} style={{
+            padding: "9px 13px", borderRadius: 10, fontSize: 12, fontWeight: 700,
+            background: activeOwner === o.id ? COLORS.infoSoft : COLORS.panel,
+            border: `1.5px solid ${activeOwner === o.id ? COLORS.info + "70" : COLORS.border}`,
+            color: activeOwner === o.id ? COLORS.info : COLORS.textFaint,
+          }}>{o.icon} {o.label} ({ownerCounts[o.id] ?? 0})</button>
         ))}
       </div>
 

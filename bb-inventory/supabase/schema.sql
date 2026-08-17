@@ -5,6 +5,7 @@ create table if not exists items (
   id text primary key,
   type text not null default 'box',
   game text not null default '',
+  owner text not null default '',
   name text not null default '',
   set_name text not null default '',
   sku text not null default '',
@@ -25,6 +26,8 @@ create table if not exists sales (
   item_name text not null default '',
   item_set text not null default '',
   item_type text not null default '',
+  owner text not null default '',
+  item_cost numeric not null default 0,
   quantity integer not null default 0,
   price numeric not null default 0,
   total numeric not null default 0,
@@ -32,6 +35,12 @@ create table if not exists sales (
   thumbnail text,
   created_at timestamptz not null default now()
 );
+
+-- Safe to re-run on a table created before the "owner" (partner tracking) feature:
+-- adds the new columns if this project already has items/sales without them.
+alter table items add column if not exists owner text not null default '';
+alter table sales add column if not exists owner text not null default '';
+alter table sales add column if not exists item_cost numeric not null default 0;
 
 -- Open access: any request carrying the anon key can read/write. The private
 -- project URL + anon key are the access boundary (matches "anyone with the link"
