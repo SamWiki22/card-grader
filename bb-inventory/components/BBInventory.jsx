@@ -922,6 +922,13 @@ export default function BBInventory() {
   const [scanBanner, setScanBanner] = useState("");
   const importRef = useRef();
   const scanRef = useRef();
+  const itemsRef = useRef(items);
+  useEffect(() => { itemsRef.current = items; }, [items]);
+  // Ids with a quantity change we've made locally but haven't finished syncing yet.
+  // Realtime echoes for these ids are ignored until the sync lands, so a slow/out-of-order
+  // response from an earlier tap can't overwrite a newer tap's optimistic value on screen.
+  const dirtyQtyIds = useRef(new Set());
+  const qtyDebounce = useRef({});
 
   useEffect(() => {
     if (!supabase) { setLoaded(true); return; }
@@ -948,6 +955,7 @@ export default function BBInventory() {
         setItems(prev => {
           if (payload.eventType === "DELETE") return prev.filter(i => i.id !== payload.old.id);
           const updated = itemFromRow(payload.new);
+          if (dirtyQtyIds.current.has(updated.id)) return prev;
           const idx = prev.findIndex(i => i.id === updated.id);
           if (idx === -1) return [...prev, updated];
           const next = [...prev]; next[idx] = updated; return next;
@@ -1110,15 +1118,23 @@ export default function BBInventory() {
     if (error) alert("Couldn't delete from the database: " + error.message);
   }
 
-  const adjustQty = useCallback(async (id, delta) => {
-    let newQty = 0;
-    setItems(prev => prev.map(i => {
-      if (i.id !== id) return i;
-      newQty = clampQty(i.quantity + delta);
-      return { ...i, quantity: newQty };
-    }));
-    const { error } = await supabase.from("items").update({ quantity: newQty }).eq("id", id);
-    if (error) console.error("Failed to sync quantity:", error.message);
+  const adjustQty = useCallback((id, delta) => {
+    // Update on-screen immediately, but only send ONE write to the database per burst of
+    // taps (after a short pause), using whatever quantity the user landed on. Sending a
+    // request per tap lets slow/out-of-order responses stomp on faster ones mid-burst.
+    dirtyQtyIds.current.add(id);
+    setItems(prev => prev.map(i => (i.id === id ? { ...i, quantity: clampQty(i.quantity + delta) } : i)));
+
+    clearTimeout(qtyDebounce.current[id]);
+    qtyDebounce.current[id] = setTimeout(async () => {
+      delete qtyDebounce.current[id];
+      const item = itemsRef.current.find(i => i.id === id);
+      if (item) {
+        const { error } = await supabase.from("items").update({ quantity: item.quantity }).eq("id", id);
+        if (error) console.error("Failed to sync quantity:", error.message);
+      }
+      dirtyQtyIds.current.delete(id);
+    }, 500);
   }, []);
 
   function exportJSON() {
