@@ -42,6 +42,16 @@ function inferGame(item) {
 
 const CONDITIONS = ["NM", "LP", "MP", "HP", "DMG"];
 
+const SORTS = [
+  { id: "low-stock", label: "Low stock first" },
+  { id: "name-asc", label: "Name A → Z" },
+  { id: "name-desc", label: "Name Z → A" },
+  { id: "price-desc", label: "Price: high → low" },
+  { id: "price-asc", label: "Price: low → high" },
+  { id: "qty-desc", label: "Qty: high → low" },
+  { id: "qty-asc", label: "Qty: low → high" },
+];
+
 const DEFAULT_LOW_STOCK = 2;
 
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
@@ -912,6 +922,7 @@ export default function BBInventory() {
   const [activeType, setActiveType] = useState("all");
   const [activeGame, setActiveGame] = useState("all");
   const [activeOwner, setActiveOwner] = useState("all");
+  const [sortBy, setSortBy] = useState("low-stock");
   const [search, setSearch] = useState("");
   const [draft, setDraft] = useState(null);
   const [isNew, setIsNew] = useState(false);
@@ -992,12 +1003,23 @@ export default function BBInventory() {
     const q = search.trim().toLowerCase();
     if (q) list = list.filter(i => (i.name + " " + i.set + " " + i.sku).toLowerCase().includes(q));
     return [...list].sort((a, b) => {
-      const aLow = a.lowStock > 0 && a.quantity <= a.lowStock;
-      const bLow = b.lowStock > 0 && b.quantity <= b.lowStock;
-      if (aLow !== bLow) return aLow ? -1 : 1;
-      return a.name.localeCompare(b.name);
+      switch (sortBy) {
+        case "name-asc": return a.name.localeCompare(b.name);
+        case "name-desc": return b.name.localeCompare(a.name);
+        case "price-desc": return (Number(b.price) || 0) - (Number(a.price) || 0);
+        case "price-asc": return (Number(a.price) || 0) - (Number(b.price) || 0);
+        case "qty-desc": return b.quantity - a.quantity;
+        case "qty-asc": return a.quantity - b.quantity;
+        case "low-stock":
+        default: {
+          const aLow = a.lowStock > 0 && a.quantity <= a.lowStock;
+          const bLow = b.lowStock > 0 && b.quantity <= b.lowStock;
+          if (aLow !== bLow) return aLow ? -1 : 1;
+          return a.name.localeCompare(b.name);
+        }
+      }
     });
-  }, [items, activeType, activeGame, activeOwner, search]);
+  }, [items, activeType, activeGame, activeOwner, sortBy, search]);
 
   const stats = useMemo(() => {
     const totalUnits = items.reduce((s, i) => s + i.quantity, 0);
@@ -1336,6 +1358,12 @@ export default function BBInventory() {
       <div style={{ padding: "0 20px 10px", maxWidth: 1100, margin: "0 auto", display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Search by name, set, or SKU…"
           style={{ flex: "1 1 220px", padding: "13px 16px", borderRadius: 12, border: `1.5px solid ${COLORS.border}`, fontSize: 15, background: COLORS.panel, color: COLORS.text }} />
+        <select value={sortBy} onChange={e => setSortBy(e.target.value)} style={{
+          flex: "0 0 auto", padding: "13px 14px", borderRadius: 12, border: `1.5px solid ${COLORS.border}`,
+          fontSize: 14, fontWeight: 700, background: COLORS.panel, color: COLORS.text, fontFamily: "inherit",
+        }}>
+          {SORTS.map(s => <option key={s.id} value={s.id}>Sort: {s.label}</option>)}
+        </select>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           {[{ id: "all", label: "All", icon: "🗂️" }, ...TYPES].map(t => (
             <button key={t.id} onClick={() => setActiveType(t.id)} style={{
