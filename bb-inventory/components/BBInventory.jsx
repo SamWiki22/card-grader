@@ -789,6 +789,181 @@ function SellModal({ items, onConfirm, onClose }) {
   );
 }
 
+// ── Price check ──────────────────────────────────────────────────────────
+// Same photo -> AI match flow as the Sell modal, but read-only: shows what an
+// item is priced at (and how many are in stock) without logging a sale.
+
+function PriceCheckModal({ items, onClose }) {
+  const [photoDataUrl, setPhotoDataUrl] = useState(null);
+  const [status, setStatus] = useState("awaiting-photo"); // awaiting-photo | identifying | ready
+  const [matches, setMatches] = useState([]);
+  const [aiNote, setAiNote] = useState("");
+  const [selected, setSelected] = useState(null);
+  const [manualSearch, setManualSearch] = useState("");
+  const fileRef = useRef();
+
+  async function handleFile(e) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setSelected(null); setMatches([]); setAiNote(""); setManualSearch("");
+    setStatus("identifying");
+    const dataUrl = await readUprightDataUrl(file);
+    setPhotoDataUrl(dataUrl);
+    try {
+      const base64 = await toJpegBase64(dataUrl);
+      const catalog = items.map(i => ({ id: i.id, name: i.name, set: i.set, type: i.type, photo: i.photo ? i.photo.split(",")[1] : null }));
+      const resp = await fetch("/api/identify", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ base64, catalog }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      const found = (data.matches || [])
+        .map(m => ({ item: items.find(i => i.id === m.id), confidence: m.confidence, reason: m.reason }))
+        .filter(m => m.item)
+        .slice(0, 5);
+      setMatches(found);
+      if (data.aiAvailable === false) setAiNote("AI matching isn't configured for this shop yet — search for the item below.");
+      else if (found.length === 0) setAiNote("No confident match found — search for the item below.");
+    } catch {
+      setAiNote("Couldn't reach the matching service — search for the item below.");
+    } finally {
+      setStatus("ready");
+    }
+  }
+
+  function retake() {
+    setPhotoDataUrl(null); setStatus("awaiting-photo"); setMatches([]); setAiNote(""); setSelected(null); setManualSearch("");
+  }
+
+  const searchResults = useMemo(() => {
+    const q = manualSearch.trim().toLowerCase();
+    if (!q) return [];
+    return items.filter(i => (i.name + " " + i.set).toLowerCase().includes(q)).slice(0, 8);
+  }, [manualSearch, items]);
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(43,27,18,0.45)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center" }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{
+        width: "100%", maxWidth: 560, maxHeight: "92vh", overflowY: "auto", background: COLORS.panel,
+        borderRadius: "24px 24px 0 0", padding: "22px 22px 32px", boxShadow: "0 -10px 40px rgba(43,27,18,0.2)",
+      }}>
+        <div style={{ width: 40, height: 4, background: COLORS.border, borderRadius: 2, margin: "0 auto 18px" }} />
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+          <div style={{ fontSize: 20, fontWeight: 800, color: COLORS.text }}>💲 Price Check</div>
+          <button onClick={onClose} style={{ width: 40, height: 40, borderRadius: 10, border: `1px solid ${COLORS.border}`, background: COLORS.bg, fontSize: 16 }}>✕</button>
+        </div>
+
+        <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={handleFile} style={{ display: "none" }} />
+
+        {!photoDataUrl ? (
+          <button onClick={() => fileRef.current?.click()} style={{
+            width: "100%", padding: "44px 20px", borderRadius: 18, border: `2px dashed ${COLORS.info}55`,
+            background: COLORS.infoSoft, color: COLORS.info, fontSize: 17, fontWeight: 800,
+            display: "flex", flexDirection: "column", alignItems: "center", gap: 10,
+          }}>
+            <span style={{ fontSize: 40 }}>📷</span>
+            Take Photo to Check Price
+          </button>
+        ) : (
+          <>
+            <div style={{ display: "flex", gap: 14, alignItems: "flex-start", marginBottom: 18 }}>
+              <img src={photoDataUrl} alt="Item to price-check" style={{ width: 100, height: 100, objectFit: "cover", borderRadius: 14, border: `1px solid ${COLORS.border}` }} />
+              <div style={{ flex: 1 }}>
+                {status === "identifying" && <div style={{ fontSize: 14, color: COLORS.textDim, fontWeight: 600 }}>🔍 Identifying item…</div>}
+                {status === "ready" && aiNote && <div style={{ fontSize: 13, color: COLORS.textDim, lineHeight: 1.5 }}>{aiNote}</div>}
+                <button onClick={retake} style={{ marginTop: 8, padding: "8px 14px", borderRadius: 10, border: `1px solid ${COLORS.border}`, background: COLORS.bg, color: COLORS.textDim, fontSize: 12, fontWeight: 700 }}>🔄 Retake photo</button>
+              </div>
+            </div>
+
+            {status === "ready" && matches.length > 0 && !selected && (
+              <div style={{ marginBottom: 18 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 0.5, color: COLORS.textDim, marginBottom: 8 }}>SUGGESTED MATCHES</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {matches.map(m => {
+                    const t = TYPE_MAP[m.item.type];
+                    return (
+                      <button key={m.item.id} onClick={() => setSelected(m.item)} style={{
+                        display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 14px",
+                        borderRadius: 12, border: `1.5px solid ${COLORS.border}`, background: COLORS.bg, textAlign: "left",
+                      }}>
+                        <div>
+                          <div style={{ fontSize: 14, fontWeight: 700, color: COLORS.text }}>{t.icon} {m.item.name}</div>
+                          <div style={{ fontSize: 12, color: COLORS.textDim, marginTop: 2 }}>{m.item.set}</div>
+                        </div>
+                        {typeof m.confidence === "number" && (
+                          <Badge color={COLORS.good} soft="rgba(91,123,74,0.10)">{Math.round(m.confidence * 100)}%</Badge>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {status === "ready" && !selected && (
+              <div style={{ marginBottom: 18 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 0.5, color: COLORS.textDim, marginBottom: 8 }}>OR SEARCH MANUALLY</div>
+                <input value={manualSearch} onChange={e => setManualSearch(e.target.value)} placeholder="Search by name or set…"
+                  style={{ width: "100%", padding: "12px 14px", borderRadius: 12, border: `1.5px solid ${COLORS.border}`, fontSize: 14, background: COLORS.bg, color: COLORS.text, marginBottom: 8 }} />
+                {searchResults.length > 0 && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {searchResults.map(item => {
+                      const t = TYPE_MAP[item.type];
+                      return (
+                        <button key={item.id} onClick={() => setSelected(item)} style={{
+                          display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px",
+                          borderRadius: 10, border: `1px solid ${COLORS.border}`, background: COLORS.panel, textAlign: "left",
+                        }}>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: COLORS.text }}>{t.icon} {item.name}</div>
+                          <div style={{ fontSize: 12, color: COLORS.textFaint }}>{item.quantity} in stock</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {selected && (() => {
+              const t = TYPE_MAP[selected.type];
+              const g = GAME_MAP[inferGame(selected)];
+              const low = selected.lowStock > 0 && selected.quantity <= selected.lowStock;
+              const out = selected.quantity === 0;
+              return (
+                <div>
+                  <div style={{ padding: 18, borderRadius: 16, background: COLORS.infoSoft, border: `1.5px solid ${COLORS.info}30`, marginBottom: 14 }}>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+                      <Badge color={t.color} soft={t.color + "18"}>{t.icon} {t.singular}</Badge>
+                      {g.id !== "other" && <Badge color={COLORS.textDim} soft="rgba(43,27,18,0.05)">{g.icon} {g.label}</Badge>}
+                      {selected.type === "single" && selected.condition && <Badge color={COLORS.amberDark} soft={COLORS.amberSoft}>{selected.condition}</Badge>}
+                      {out ? <Badge color={COLORS.danger} soft={COLORS.dangerSoft}>OUT OF STOCK</Badge> : low ? <Badge color={COLORS.danger} soft={COLORS.dangerSoft}>LOW STOCK</Badge> : null}
+                    </div>
+                    <div style={{ fontSize: 18, fontWeight: 800, color: COLORS.text }}>{selected.name}</div>
+                    {selected.set && <div style={{ fontSize: 13, color: COLORS.textDim, marginTop: 2 }}>{selected.set}</div>}
+                    <div style={{ display: "flex", gap: 28, marginTop: 16 }}>
+                      <div>
+                        <div style={{ fontSize: 11, color: COLORS.textFaint, fontWeight: 700, letterSpacing: 0.5 }}>SELL PRICE</div>
+                        <div style={{ fontSize: 28, fontWeight: 900, color: COLORS.info }}>{money(selected.price)}</div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 11, color: COLORS.textFaint, fontWeight: 700, letterSpacing: 0.5 }}>IN STOCK</div>
+                        <div style={{ fontSize: 28, fontWeight: 900, color: out ? COLORS.danger : COLORS.text }}>{selected.quantity}</div>
+                      </div>
+                    </div>
+                    {selected.sku && <div style={{ fontSize: 12, color: COLORS.textFaint, marginTop: 10, fontFamily: "monospace" }}>SKU {selected.sku}</div>}
+                  </div>
+                  <button onClick={() => setSelected(null)} style={{ width: "100%", padding: "13px 18px", borderRadius: 14, border: `1.5px solid ${COLORS.border}`, background: COLORS.bg, color: COLORS.textDim, fontSize: 14, fontWeight: 700 }}>← Check a different match</button>
+                </div>
+              );
+            })()}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Sales log ────────────────────────────────────────────────────────────
 
 function SalesLogModal({ sales, onVoid, onExportCSV, onClose }) {
@@ -929,6 +1104,7 @@ export default function BBInventory() {
   const [showSell, setShowSell] = useState(false);
   const [showSalesLog, setShowSalesLog] = useState(false);
   const [showSettlement, setShowSettlement] = useState(false);
+  const [showPriceCheck, setShowPriceCheck] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [scanBanner, setScanBanner] = useState("");
   const importRef = useRef();
@@ -1298,6 +1474,9 @@ export default function BBInventory() {
       {showSettlement && (
         <SettlementModal items={items} sales={sales} onClose={() => setShowSettlement(false)} />
       )}
+      {showPriceCheck && (
+        <PriceCheckModal items={items} onClose={() => setShowPriceCheck(false)} />
+      )}
       {scanning && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(43,27,18,0.55)", zIndex: 250, display: "flex", alignItems: "center", justifyContent: "center" }}>
           <div style={{ background: COLORS.panel, borderRadius: 20, padding: "32px 40px", textAlign: "center", boxShadow: "0 10px 40px rgba(43,27,18,0.3)" }}>
@@ -1326,6 +1505,7 @@ export default function BBInventory() {
             <IconButton title="Import JSON backup" onClick={() => importRef.current?.click()}>⬆️</IconButton>
             <IconButton title="Sales log" onClick={() => setShowSalesLog(true)}>🧾</IconButton>
             <IconButton title="Partner settlement" onClick={() => setShowSettlement(true)}>🤝</IconButton>
+            <IconButton title="Price check" onClick={() => setShowPriceCheck(true)}>💲</IconButton>
             <button onClick={() => setShowSell(true)} style={{
               display: "flex", alignItems: "center", gap: 8, padding: "0 18px", height: 44, borderRadius: 12,
               background: COLORS.good, border: "none", color: "#fff", fontSize: 15, fontWeight: 800,
