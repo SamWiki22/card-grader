@@ -55,6 +55,13 @@ create policy "Allow all access to items" on items for all using (true) with che
 drop policy if exists "Allow all access to sales" on sales;
 create policy "Allow all access to sales" on sales for all using (true) with check (true);
 
+-- Without this, a partial update (e.g. changing just "quantity") can make Postgres
+-- omit large unchanged columns like "photo"/"thumbnail" from the realtime change
+-- event it broadcasts, which made photos disappear on screen after a quantity tap.
+-- REPLICA IDENTITY FULL makes every change event carry the full row instead.
+alter table items replica identity full;
+alter table sales replica identity full;
+
 -- Realtime: lets every open tab/device see changes made by any other device live.
 -- Wrapped so this script is safe to run more than once.
 do $$
