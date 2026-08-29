@@ -50,8 +50,10 @@ function stockFromRow(row) {
     ticker: row.ticker || "",
     name: row.name || "",
     shares: row.shares ?? 0,
-    costBasis: row.cost_basis ?? 0,
+    purchaseDate: row.purchase_date || "",
+    purchasePrice: row.purchase_price ?? 0,
     currentPrice: row.current_price ?? 0,
+    priceUpdatedAt: row.price_updated_at || null,
     notes: row.notes || "",
   };
 }
@@ -61,8 +63,10 @@ function stockToRow(s) {
     ticker: (s.ticker || "").toUpperCase(),
     name: s.name || "",
     shares: num(s.shares),
-    cost_basis: num(s.costBasis),
+    purchase_date: s.purchaseDate || null,
+    purchase_price: num(s.purchasePrice),
     current_price: num(s.currentPrice),
+    price_updated_at: s.priceUpdatedAt || null,
     notes: s.notes || "",
     updated_at: new Date().toISOString(),
   };
@@ -104,9 +108,18 @@ function snapshotFromRow(row) {
 
 // ── Derived math ──────────────────────────────────────────────────────────
 
+function stockCostBasis(s) { return num(s.shares) * num(s.purchasePrice); }
 function stockValue(s) { return num(s.shares) * num(s.currentPrice); }
-function stockGain(s) { return stockValue(s) - num(s.costBasis); }
-function stockGainPct(s) { return num(s.costBasis) > 0 ? (stockGain(s) / num(s.costBasis)) * 100 : 0; }
+function stockGain(s) { return stockValue(s) - stockCostBasis(s); }
+function stockGainPct(s) { const cost = stockCostBasis(s); return cost > 0 ? (stockGain(s) / cost) * 100 : 0; }
+
+async function fetchQuote(ticker, dateStr) {
+  const qs = new URLSearchParams({ ticker, date: dateStr || todayStr() });
+  const resp = await fetch(`/api/quote?${qs}`);
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(data.error || "Price lookup failed.");
+  return data; // { ticker, date, price }
+}
 
 // APY already reflects compounding, so estimate current accrued value by
 // compounding annually over the elapsed fraction of a year since opening.
@@ -115,10 +128,6 @@ function cdCurrentValue(c) {
   if (!c.openDate) return principal;
   const years = Math.max(0, (Date.now() - new Date(c.openDate + "T00:00:00").getTime()) / (365.25 * 86400000));
   return principal * Math.pow(1 + num(c.apy) / 100, years);
-}
-function cdMaturityValue(c) {
-  const years = num(c.termMonths) / 12;
-  return num(c.principal) * Math.pow(1 + num(c.apy) / 100, years);
 }
 
 export default function FinancialTracker() {
@@ -194,7 +203,7 @@ export default function FinancialTracker() {
   // ── Totals ────────────────────────────────────────────────────────────
   const totals = useMemo(() => {
     const stocksValue = stocks.reduce((sum, s) => sum + stockValue(s), 0);
-    const stocksCost = stocks.reduce((sum, s) => sum + num(s.costBasis), 0);
+    const stocksCost = stocks.reduce((sum, s) => sum + stockCostBasis(s), 0);
     const stocksGain = stocksValue - stocksCost;
     const cdsValue = cds.reduce((sum, c) => sum + cdCurrentValue(c), 0);
     const cdsPrincipal = cds.reduce((sum, c) => sum + num(c.principal), 0);
@@ -234,9 +243,76 @@ export default function FinancialTracker() {
   }
 
   // ── Stock CRUD ────────────────────────────────────────────────────────
-  function openNewStock() { setStockDraft({ ticker: "", name: "", shares: "", costBasis: "", currentPrice: "", notes: "" }); }
-  function openEditStock(s) { setStockDraft({ ...s, shares: String(s.shares), costBasis: String(s.costBasis), currentPrice: String(s.currentPrice) }); }
+  function openNewStock() {
+    setStockDraft({
+      ticker: "", name: "", shares: "", purchaseDate: todayStr(), purchasePrice: "", currentPrice: "",
+      purchasePriceManual: false, currentPriceManual: false, purchaseLookupError: "", currentLookupError: "",
+      lookingUpPurchase: false, lookingUpCurrent: false,
+    });
+  }
+  function openEditStock(s) {
+    setStockDraft({
+      ...s, shares: String(s.shares), purchasePrice: String(s.purchasePrice), currentPrice: String(s.currentPrice),
+      purchasePriceManual: true, currentPriceManual: true, purchaseLookupError: "", currentLookupError: "",
+      lookingUpPurchase: false, lookingUpCurrent: false,
+    });
+  }
   function closeStockDraft() { setStockDraft(null); }
+
+  // Auto-fills purchase price (as of the purchase date) and current price
+  // (as of today) once a ticker is entered — the whole point being that
+  // nobody has to remember or dig up what a stock cost years ago.
+  async function lookupPurchasePrice(ticker, purchaseDate, force) {
+    if (!ticker) return;
+    setStockDraft(prev => (prev ? { ...prev, lookingUpPurchase: true, purchaseLookupError: "" } : prev));
+    try {
+      const q = await fetchQuote(ticker, purchaseDate);
+      setStockDraft(prev => (prev && (force || !prev.purchasePriceManual)
+        ? { ...prev, purchasePrice: String(q.price), purchasePriceManual: false, lookingUpPurchase: false }
+        : prev ? { ...prev, lookingUpPurchase: false } : prev));
+    } catch (err) {
+      setStockDraft(prev => (prev ? { ...prev, lookingUpPurchase: false, purchaseLookupError: err.message } : prev));
+    }
+  }
+  async function lookupCurrentPrice(ticker, force) {
+    if (!ticker) return;
+    setStockDraft(prev => (prev ? { ...prev, lookingUpCurrent: true, currentLookupError: "" } : prev));
+    try {
+      const q = await fetchQuote(ticker, todayStr());
+      setStockDraft(prev => (prev && (force || !prev.currentPriceManual)
+        ? { ...prev, currentPrice: String(q.price), currentPriceManual: false, lookingUpCurrent: false }
+        : prev ? { ...prev, lookingUpCurrent: false } : prev));
+    } catch (err) {
+      setStockDraft(prev => (prev ? { ...prev, lookingUpCurrent: false, currentLookupError: err.message } : prev));
+    }
+  }
+  function onStockTickerBlur() {
+    const ticker = (stockDraft?.ticker || "").trim();
+    if (!ticker) return;
+    lookupPurchasePrice(ticker, stockDraft.purchaseDate);
+    lookupCurrentPrice(ticker);
+  }
+  function onStockPurchaseDateChange(dateStr) {
+    setStockDraft(prev => (prev ? { ...prev, purchaseDate: dateStr } : prev));
+    const ticker = (stockDraft?.ticker || "").trim();
+    if (ticker) lookupPurchasePrice(ticker, dateStr);
+  }
+
+  async function refreshAllCurrentPrices() {
+    const targets = stocks.filter(s => s.ticker);
+    for (const s of targets) {
+      try {
+        const q = await fetchQuote(s.ticker, todayStr());
+        const updated = { ...s, currentPrice: q.price, priceUpdatedAt: new Date().toISOString() };
+        setStocks(prev => prev.map(x => (x.id === s.id ? updated : x)));
+        if (supabase) await supabase.from("stocks").update({ current_price: q.price, price_updated_at: updated.priceUpdatedAt }).eq("id", s.id);
+      } catch (err) {
+        console.error(`Couldn't refresh price for ${s.ticker}:`, err.message);
+      }
+      await new Promise(r => setTimeout(r, 250)); // be polite to the free lookup endpoint
+    }
+    saveSnapshot();
+  }
 
   async function saveStockDraft() {
     const clean = {
@@ -244,8 +320,10 @@ export default function FinancialTracker() {
       ticker: (stockDraft.ticker || "").trim().toUpperCase(),
       name: (stockDraft.name || "").trim(),
       shares: num(stockDraft.shares),
-      costBasis: num(stockDraft.costBasis),
+      purchaseDate: stockDraft.purchaseDate || "",
+      purchasePrice: num(stockDraft.purchasePrice),
       currentPrice: num(stockDraft.currentPrice),
+      priceUpdatedAt: new Date().toISOString(),
       notes: (stockDraft.notes || "").trim(),
     };
     if (!clean.ticker) { alert("Enter a ticker symbol."); return; }
@@ -384,12 +462,13 @@ export default function FinancialTracker() {
         countLabel={`${stocks.length} holding${stocks.length === 1 ? "" : "s"}`}
         onAdd={openNewStock}
         addLabel="+ Add stock"
+        extra={stocks.length > 0 && <button style={styles.refreshBtn} onClick={refreshAllCurrentPrices}>Refresh prices</button>}
       >
         {stocks.length === 0 ? (
-          <EmptyState text="No stocks yet. Add the first holding to start tracking." />
+          <EmptyState text="Add each purchase — ticker, shares, and the date she bought it — and the app looks up what it cost that day and what it's worth now." />
         ) : (
           <div style={styles.list}>
-            {[...stocks].sort((a, b) => a.ticker.localeCompare(b.ticker)).map(s => {
+            {[...stocks].sort((a, b) => (b.purchaseDate || "").localeCompare(a.purchaseDate || "")).map(s => {
               const value = stockValue(s);
               const gain = stockGain(s);
               const gp = stockGainPct(s);
@@ -398,7 +477,9 @@ export default function FinancialTracker() {
                   <div style={styles.rowMain}>
                     <div style={styles.rowTitle}>{s.ticker}</div>
                     {s.name && <div style={styles.rowSub}>{s.name}</div>}
-                    <div style={styles.rowMeta}>{num(s.shares).toLocaleString()} sh @ {money(s.currentPrice)}</div>
+                    <div style={styles.rowMeta}>
+                      {num(s.shares).toLocaleString()} sh · bought {s.purchaseDate || "?"} @ {money(s.purchasePrice)} · now {money(s.currentPrice)}
+                    </div>
                   </div>
                   <div style={styles.rowEnd}>
                     <div style={styles.rowValue}>{money(value)}</div>
@@ -455,6 +536,10 @@ export default function FinancialTracker() {
         <StockFormModal
           draft={stockDraft}
           setDraft={setStockDraft}
+          onTickerBlur={onStockTickerBlur}
+          onPurchaseDateChange={onStockPurchaseDateChange}
+          onRetryPurchaseLookup={() => lookupPurchasePrice(stockDraft.ticker.trim(), stockDraft.purchaseDate, true)}
+          onRetryCurrentLookup={() => lookupCurrentPrice(stockDraft.ticker.trim(), true)}
           onSave={saveStockDraft}
           onDelete={stockDraft.id ? deleteStockDraft : null}
           onClose={closeStockDraft}
@@ -502,7 +587,7 @@ function AllocationCard({ stocksShare, cdsShare }) {
   );
 }
 
-function Section({ title, countLabel, onAdd, addLabel, children }) {
+function Section({ title, countLabel, onAdd, addLabel, extra, children }) {
   return (
     <section style={styles.section}>
       <div style={styles.sectionHead}>
@@ -510,7 +595,10 @@ function Section({ title, countLabel, onAdd, addLabel, children }) {
           <div style={styles.sectionTitle}>{title}</div>
           <div style={styles.sectionCount}>{countLabel}</div>
         </div>
-        <button style={styles.addBtn} onClick={onAdd}>{addLabel}</button>
+        <div style={{ display: "flex", gap: 8 }}>
+          {extra}
+          <button style={styles.addBtn} onClick={onAdd}>{addLabel}</button>
+        </div>
       </div>
       {children}
     </section>
@@ -578,14 +666,14 @@ function FieldRow({ label, children }) {
   );
 }
 
-function StockFormModal({ draft, setDraft, onSave, onDelete, onClose }) {
+function StockFormModal({ draft, setDraft, onTickerBlur, onPurchaseDateChange, onRetryPurchaseLookup, onRetryCurrentLookup, onSave, onDelete, onClose }) {
   const set = patch => setDraft(prev => ({ ...prev, ...patch }));
   return (
     <div style={styles.overlay} onClick={onClose}>
       <div style={styles.modal} onClick={e => e.stopPropagation()}>
         <div style={styles.modalTitle}>{draft.id ? "Edit stock" : "Add stock"}</div>
         <FieldRow label="Ticker">
-          <input style={styles.input} value={draft.ticker} onChange={e => set({ ticker: e.target.value.toUpperCase() })} placeholder="AAPL" autoFocus />
+          <input style={styles.input} value={draft.ticker} onChange={e => set({ ticker: e.target.value.toUpperCase() })} onBlur={onTickerBlur} placeholder="AAPL" autoFocus />
         </FieldRow>
         <FieldRow label="Company name (optional)">
           <input style={styles.input} value={draft.name} onChange={e => set({ name: e.target.value })} placeholder="Apple Inc." />
@@ -593,11 +681,38 @@ function StockFormModal({ draft, setDraft, onSave, onDelete, onClose }) {
         <FieldRow label="Shares owned">
           <input style={styles.input} type="number" inputMode="decimal" value={draft.shares} onChange={e => set({ shares: e.target.value })} placeholder="0" />
         </FieldRow>
-        <FieldRow label="Total cost basis ($)">
-          <input style={styles.input} type="number" inputMode="decimal" value={draft.costBasis} onChange={e => set({ costBasis: e.target.value })} placeholder="0.00" />
+        <FieldRow label="Purchase date">
+          <input style={styles.input} type="date" value={draft.purchaseDate} onChange={e => onPurchaseDateChange(e.target.value)} />
+        </FieldRow>
+        <FieldRow label="Price per share on purchase date ($)">
+          <div style={styles.priceRow}>
+            <input
+              style={styles.input}
+              type="number" inputMode="decimal"
+              value={draft.purchasePrice}
+              onChange={e => set({ purchasePrice: e.target.value, purchasePriceManual: true })}
+              placeholder={draft.lookingUpPurchase ? "Looking up…" : "0.00"}
+            />
+            <button type="button" style={styles.lookupBtn} onClick={onRetryPurchaseLookup} disabled={draft.lookingUpPurchase}>
+              {draft.lookingUpPurchase ? "…" : "Look up"}
+            </button>
+          </div>
+          {draft.purchaseLookupError && <div style={styles.lookupError}>{draft.purchaseLookupError}</div>}
         </FieldRow>
         <FieldRow label="Current price per share ($)">
-          <input style={styles.input} type="number" inputMode="decimal" value={draft.currentPrice} onChange={e => set({ currentPrice: e.target.value })} placeholder="0.00" />
+          <div style={styles.priceRow}>
+            <input
+              style={styles.input}
+              type="number" inputMode="decimal"
+              value={draft.currentPrice}
+              onChange={e => set({ currentPrice: e.target.value, currentPriceManual: true })}
+              placeholder={draft.lookingUpCurrent ? "Looking up…" : "0.00"}
+            />
+            <button type="button" style={styles.lookupBtn} onClick={onRetryCurrentLookup} disabled={draft.lookingUpCurrent}>
+              {draft.lookingUpCurrent ? "…" : "Look up"}
+            </button>
+          </div>
+          {draft.currentLookupError && <div style={styles.lookupError}>{draft.currentLookupError}</div>}
         </FieldRow>
         <FieldRow label="Notes (optional)">
           <textarea style={styles.textarea} value={draft.notes} onChange={e => set({ notes: e.target.value })} rows={2} />
@@ -679,6 +794,7 @@ const styles = {
   sectionTitle: { fontSize: 16, fontWeight: 700 },
   sectionCount: { fontSize: 12.5, color: COLORS.sub, marginTop: 2 },
   addBtn: { background: COLORS.primary, color: "#fff", border: "none", borderRadius: 9, padding: "8px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" },
+  refreshBtn: { background: COLORS.card, border: `1px solid ${COLORS.border}`, color: COLORS.primary, borderRadius: 9, padding: "8px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" },
 
   empty: { color: COLORS.sub, fontSize: 13.5, padding: "14px 4px" },
   list: { display: "flex", flexDirection: "column", gap: 8 },
@@ -700,7 +816,10 @@ const styles = {
   modalTitle: { fontSize: 17, fontWeight: 700, marginBottom: 14 },
   fieldRow: { display: "flex", flexDirection: "column", gap: 4, marginBottom: 10 },
   fieldLabel: { fontSize: 12.5, color: COLORS.sub, fontWeight: 600 },
-  input: { border: `1px solid ${COLORS.border}`, borderRadius: 9, padding: "9px 11px", fontSize: 14.5, color: COLORS.ink, background: "#FBFBFC" },
+  input: { border: `1px solid ${COLORS.border}`, borderRadius: 9, padding: "9px 11px", fontSize: 14.5, color: COLORS.ink, background: "#FBFBFC", flex: 1, minWidth: 0 },
+  priceRow: { display: "flex", gap: 6 },
+  lookupBtn: { border: `1px solid ${COLORS.border}`, background: "#FBFBFC", color: COLORS.primary, borderRadius: 9, padding: "0 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" },
+  lookupError: { fontSize: 12, color: COLORS.loss, marginTop: 3 },
   textarea: { border: `1px solid ${COLORS.border}`, borderRadius: 9, padding: "9px 11px", fontSize: 14, color: COLORS.ink, background: "#FBFBFC", resize: "vertical", fontFamily: "inherit" },
   modalActions: { display: "flex", alignItems: "center", gap: 8, marginTop: 12 },
   deleteBtn: { background: "transparent", color: COLORS.loss, border: "none", fontSize: 13.5, fontWeight: 600, cursor: "pointer", padding: "8px 4px" },
