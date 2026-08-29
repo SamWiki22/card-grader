@@ -1,0 +1,11 @@
+{
+  "name": "Financial Tracker",
+  "short_name": "Finances",
+  "description": "Personal tracker for stocks and CD accounts",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F7F8FA",
+  "theme_color": "#1F5C4C",
+  "orientation": "any",
+  "icons": []
+}
