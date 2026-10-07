@@ -1,11 +1,12 @@
 import { supabaseAdmin } from "../../lib/supabaseAdmin";
 import { deckPricing, round2 } from "../../lib/pricing";
 import { createCheckoutSession } from "../../lib/stripe";
+import { deckAvailability } from "../../lib/preorder";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const UUID_RE = /^[0-9a-f-]{36}$/i;
 
-// POST { items: [{ kind: "card"|"deck", id, quantity }], email, name, note }
+// POST { items: [{ kind: "card"|"deck", id, quantity, preorder? }], email, name, note }
 // Prices and stock are always re-read from the database; client-sent prices are ignored.
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
@@ -22,13 +23,19 @@ export default async function handler(req, res) {
 
   const cardIds = items.filter(i => i.kind === "card").map(i => i.id);
   const deckIds = items.filter(i => i.kind === "deck").map(i => i.id);
-  const [cardsRes, decksRes] = await Promise.all([
+  const [cardsRes, decksRes, openRes] = await Promise.all([
     cardIds.length ? supabaseAdmin.from("cards").select("id,name,set_code,condition,price,quantity").in("id", cardIds) : { data: [] },
     deckIds.length
-      ? supabaseAdmin.from("decks").select("id,name,price,discount_pct,quantity,published,deck_cards(count,card:cards(id,price,quantity))").in("id", deckIds)
+      ? supabaseAdmin
+          .from("decks")
+          .select("id,name,price,discount_pct,quantity,published,preorder_enabled,preorder_limit,preorder_eta,deck_cards(count,card:cards(id,price,quantity))")
+          .in("id", deckIds)
       : { data: [] },
+    deckIds.length ? supabaseAdmin.rpc("preorder_open_counts") : { data: [] },
   ]);
-  if (cardsRes.error || decksRes.error) return res.status(500).json({ error: (cardsRes.error || decksRes.error).message });
+  const dbError = cardsRes.error || decksRes.error || openRes.error;
+  if (dbError) return res.status(500).json({ error: dbError.message });
+  const openPreorders = Object.fromEntries((openRes.data || []).map(r => [r.deck_id, r.open_copies]));
   const cards = Object.fromEntries(cardsRes.data.map(c => [c.id, c]));
   const decks = Object.fromEntries(decksRes.data.map(d => [d.id, d]));
 
@@ -44,8 +51,17 @@ export default async function handler(req, res) {
       const d = decks[it.id];
       const { price } = d ? deckPricing(d, d.deck_cards) : {};
       if (!d || !d.published || !price) return res.status(409).json({ error: "A deck in your cart is no longer available" });
-      if (d.quantity < it.quantity) return res.status(409).json({ error: `Only ${d.quantity} of ${d.name} left in stock` });
-      lines.push({ kind: "deck", ref_id: d.id, name: `${d.name} (pre-built deck)`, unit_price: price, quantity: it.quantity });
+      const avail = deckAvailability(d, openPreorders[d.id] || 0);
+      const preorder = avail.mode === "preorder";
+      // A pre-order that's now in stock just ships from stock; a stock purchase never silently becomes a
+      // pre-order, because the customer has to agree to wait.
+      if (avail.mode === "soldout") return res.status(409).json({ error: `${d.name} is sold out` });
+      if (preorder && !it.preorder) return res.status(409).json({ error: `${d.name} just sold out: it's available as a pre-order instead` });
+      if (avail.max < it.quantity) return res.status(409).json({ error: `Only ${avail.max} of ${d.name} available${preorder ? " to pre-order" : ""}` });
+      lines.push({
+        kind: "deck", ref_id: d.id, preorder, unit_price: price, quantity: it.quantity,
+        name: preorder ? `${d.name} (pre-order${d.preorder_eta ? `, ships ${d.preorder_eta}` : ""})` : `${d.name} (pre-built deck)`,
+      });
     }
   }
   const total = round2(lines.reduce((s, l) => s + l.unit_price * l.quantity, 0));
@@ -63,7 +79,7 @@ export default async function handler(req, res) {
     return res.status(200).json({ orderId: order.id, status: "pending_payment" });
   }
 
-  const site = (process.env.SITE_URL || `https://${req.headers.host}`).replace(/\/$/, "");
+  const site = (process.env.SITE_URL || `https://${req.headers.host}`).replace(/\/$/, "") + (process.env.NEXT_PUBLIC_BASE_PATH || "");
   try {
     const session = await createCheckoutSession({
       mode: "payment",

@@ -35,9 +35,32 @@ webhook to `https://<your-site>/api/stripe-webhook` for `checkout.session.comple
 
 Customers can buy the whole pre-built deck or any of its cards as singles.
 
+## Pre-orders: sell the deck before you build it
+On a deck, tick **Take pre-orders when sold out** and optionally set a cap and a ship date. When the deck
+has no built copies, the store shows **Pre-order this deck**; customers pay up front.
+Also set **Newest set in deck** + release date: decks are sorted newest set first and get a
+*New* / *Upcoming* badge, and the home page has a *Pre-order now* row.
+
+**Admin → Pre-orders & Sourcing** is the weekly loop:
+1. **Build queue**: per deck, paid pre-orders + your *keep on shelf* target − built copies = copies to build.
+2. **Shopping list**: every card needed across all those decks, pooled (a staple in five decks shows once),
+   minus singles on hand, split into **Bulk / cheap** (under a price you set), **Staples**, and
+   **Not stocked yet**. **Copy list** gives `qty name` lines for TCGplayer Mass Entry, so its optimizer
+   picks the cheapest printing.
+3. When cards arrive: bulk-add them in Singles Inventory → **Build N** on the deck → **Fill pre-orders
+   from shelf** (oldest order first) → ship from the Orders tab.
+
+## Running it inside an existing site (Illestcollect)
+* **Subdomain** (simplest): deploy this folder as its own Vercel project and point e.g.
+  `shop.illestcollect.com` at it. Link to it from the main site's nav.
+* **Path on the main domain**: set `NEXT_PUBLIC_BASE_PATH=/shop`, deploy, then add a rewrite on the main
+  site so `illestcollect.com/shop/*` proxies to this deployment. For a Next.js main site:
+  `rewrites: () => [{ source: "/shop/:path*", destination: "https://<this-deployment>/shop/:path*" }]`.
+* Set `NEXT_PUBLIC_SHOP_NAME=Illestcollect` for the header and page titles.
+
 ## Notes
 * Decklists are public tournament results; each deck credits its source. Use the export
   buttons or official APIs rather than scraping sites whose terms forbid it.
 * Card names and set codes are factual, but card **images** are copyrighted. Use your own photos, or
   images from an API whose terms allow commercial display.
-* `npm test` runs the decklist parser, matching, pricing and Stripe signature tests.
+* `npm test` runs the decklist parser, matching, pricing, pre-order, sourcing and Stripe signature tests.

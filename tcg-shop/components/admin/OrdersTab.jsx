@@ -48,9 +48,18 @@ export default function OrdersTab() {
             </div>
           </div>
           <table><tbody>
-            {o.order_items.map(i => <tr key={i.id}><td>{i.quantity}×</td><td>{i.name}</td><td>{money(i.unit_price)}</td></tr>)}
+            {o.order_items.map(i => (
+              <tr key={i.id}>
+                <td>{i.quantity}×</td>
+                <td>{i.name} {i.preorder && (i.allocated ? <span className="badge ok">pre-order filled</span> : <span className="badge warn">pre-order: build &amp; fill</span>)}</td>
+                <td>{money(i.unit_price)}</td>
+              </tr>
+            ))}
           </tbody></table>
           {o.note && <div className="small">Note: {o.note}</div>}
+          {(o.status === "paid" || o.status === "paid_short") && o.order_items.some(i => i.preorder && !i.allocated) && (
+            <div className="small muted">Waiting on pre-ordered decks: build them, then click <em>Fill pre-orders from shelf</em> on the deck.</div>
+          )}
           {o.status === "paid_short" && <div className="small error">Something sold out before this order was paid: check stock and refund or substitute.</div>}
           <div className="row">
             {o.status === "pending_payment" && (
@@ -59,7 +68,7 @@ export default function OrdersTab() {
                 <button className="btn small danger" onClick={() => act(() => supabase.from("orders").update({ status: "cancelled" }).eq("id", o.id))}>Cancel</button>
               </>
             )}
-            {(o.status === "paid" || o.status === "paid_short") && (
+            {(o.status === "paid" || o.status === "paid_short") && o.order_items.every(i => !i.preorder || i.allocated) && (
               <button className="btn small" onClick={() => act(() => supabase.from("orders").update({ status: "shipped" }).eq("id", o.id))}>Mark shipped</button>
             )}
           </div>

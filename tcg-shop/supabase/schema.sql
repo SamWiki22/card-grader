@@ -100,6 +100,18 @@ create table if not exists order_items (
   quantity integer not null check (quantity > 0)
 );
 
+-- Pre-orders + newest-set merchandising (safe to re-run on a database created before these existed).
+-- A pre-order is a paid order line for a deck you haven't built yet; it's filled from the shelf later
+-- (oldest first) with allocate_preorders(). target_stock = extra copies you want built to sell off the shelf.
+alter table decks add column if not exists preorder_enabled boolean not null default false;
+alter table decks add column if not exists preorder_limit integer check (preorder_limit is null or preorder_limit >= 0);
+alter table decks add column if not exists preorder_eta text not null default '';
+alter table decks add column if not exists target_stock integer not null default 0 check (target_stock >= 0);
+alter table decks add column if not exists featured_set text not null default '';
+alter table decks add column if not exists set_release_date date;
+alter table order_items add column if not exists preorder boolean not null default false;
+alter table order_items add column if not exists allocated boolean not null default false;
+
 -- Row level security ---------------------------------------------------------
 alter table admins enable row level security;
 alter table cards enable row level security;
@@ -182,7 +194,8 @@ begin
   if st is null then raise exception 'order not found'; end if;
   if st <> 'pending_payment' then return st; end if;
 
-  for it in select kind, ref_id, quantity from order_items where order_id = p_order loop
+  -- Pre-order lines are paid but not taken from stock here; allocate_preorders() fills them once built.
+  for it in select id, kind, ref_id, quantity from order_items where order_id = p_order and not preorder loop
     if it.kind = 'card' then
       update cards set quantity = quantity - it.quantity, updated_at = now()
         where id = it.ref_id and quantity >= it.quantity;
@@ -190,7 +203,9 @@ begin
       update decks set quantity = quantity - it.quantity, updated_at = now()
         where id = it.ref_id and quantity >= it.quantity;
     end if;
-    if not found then short := true; end if;
+    if not found then short := true;
+    else update order_items set allocated = true where id = it.id;
+    end if;
   end loop;
 
   st := case when short then 'paid_short' else 'paid' end;
@@ -199,5 +214,46 @@ begin
 end;
 $$;
 
+-- Fill paid pre-orders for a deck from built copies on the shelf, oldest order first.
+-- Stops at the first order that can't be filled whole, so nobody gets skipped in line.
+-- Returns the number of copies allocated.
+create or replace function allocate_preorders(p_deck uuid) returns integer
+language plpgsql security definer set search_path = public as $$
+declare
+  it record;
+  n integer := 0;
+begin
+  if not is_admin() then raise exception 'not authorized'; end if;
+  for it in
+    select oi.id, oi.quantity from order_items oi join orders o on o.id = oi.order_id
+    where oi.kind = 'deck' and oi.ref_id = p_deck and oi.preorder and not oi.allocated
+      and o.status in ('paid', 'paid_short')
+    order by o.created_at
+    for update of oi
+  loop
+    update decks set quantity = quantity - it.quantity, updated_at = now()
+      where id = p_deck and quantity >= it.quantity;
+    exit when not found;
+    update order_items set allocated = true where id = it.id;
+    n := n + it.quantity;
+  end loop;
+  return n;
+end;
+$$;
+
+revoke execute on function allocate_preorders(uuid) from anon;
 revoke execute on function build_deck(uuid, integer) from anon;
 revoke execute on function fulfill_order(uuid) from anon;
+
+-- Open (not yet filled, not cancelled) pre-order copies per published deck, so the storefront can
+-- enforce pre-order caps without exposing order data.
+create or replace function preorder_open_counts() returns table (deck_id uuid, open_copies integer)
+language sql stable security definer set search_path = public as $$
+  select oi.ref_id, sum(oi.quantity)::integer
+  from order_items oi
+  join orders o on o.id = oi.order_id
+  join decks d on d.id = oi.ref_id
+  where oi.kind = 'deck' and oi.preorder and not oi.allocated
+    and o.status <> 'cancelled' and (d.published or is_admin())
+  group by oi.ref_id;
+$$;

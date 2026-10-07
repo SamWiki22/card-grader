@@ -2,18 +2,21 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import Layout from "../../components/Layout";
-import { sourceLine } from "../../components/DeckTile";
+import { sourceLine, SetBadge, AvailabilityBadge } from "../../components/DeckTile";
 import { supabase } from "../../lib/supabaseClient";
 import { gameLabel } from "../../lib/games";
 import { deckPricing, money } from "../../lib/pricing";
 import { formatDecklist, deckSize } from "../../lib/decklist";
 import { useCart } from "../../lib/cart";
+import { deckAvailability } from "../../lib/preorder";
+import { usePreorderCounts } from "../../lib/usePreorderCounts";
 
 export default function DeckPage() {
   const { query, isReady } = useRouter();
   const [deck, setDeck] = useState(undefined);
   const [copied, setCopied] = useState(false);
   const { add, items } = useCart();
+  const open = usePreorderCounts();
 
   useEffect(() => {
     if (!isReady || !supabase) return;
@@ -39,8 +42,10 @@ export default function DeckPage() {
 
   const { price, singlesTotal, complete, savings } = deckPricing(deck, deck.deck_cards);
   const source = sourceLine(deck);
+  const avail = deckAvailability(deck, open[deck.id] || 0);
+  const preorder = avail.mode === "preorder";
   const inCart = items.find(i => i.kind === "deck" && i.id === deck.id)?.quantity || 0;
-  const canBuy = price > 0 && deck.quantity - inCart > 0;
+  const canBuy = price > 0 && avail.max - inCart > 0;
 
   const copyList = async () => {
     await navigator.clipboard.writeText(formatDecklist(deck.deck_cards));
@@ -53,7 +58,7 @@ export default function DeckPage() {
       <Link href="/decks" className="small muted">← All decks</Link>
       <div className="spread" style={{ alignItems: "flex-start", margin: "10px 0 20px" }}>
         <div>
-          <div className="muted small">{gameLabel(deck.game)}{deck.format ? ` · ${deck.format}` : ""}{deck.archetype ? ` · ${deck.archetype}` : ""}</div>
+          <div className="muted small row">{gameLabel(deck.game)}{deck.format ? ` · ${deck.format}` : ""}{deck.archetype ? ` · ${deck.archetype}` : ""} <SetBadge deck={deck} /></div>
           <h1 style={{ margin: "4px 0" }}>{deck.name}</h1>
           {source && (
             <div className="muted">
@@ -66,11 +71,12 @@ export default function DeckPage() {
           <div className="price" style={{ fontSize: 24 }}>{money(price)}</div>
           {complete && savings > 0 && <div className="small muted">{money(singlesTotal)} as singles: you save {money(savings)}</div>}
           <div className="small" style={{ margin: "8px 0" }}>
-            {deck.quantity > 0 ? <span className="badge ok">{deck.quantity} built &amp; ready to ship</span> : <span className="badge bad">Sold out</span>}
+            {avail.mode === "stock" ? <span className="badge ok">{deck.quantity} built &amp; ready to ship</span> : <AvailabilityBadge deck={deck} openPreorders={open[deck.id] || 0} />}
           </div>
+          {preorder && <p className="small muted" style={{ margin: "0 0 8px" }}>Pay now and we&apos;ll build your copy{deck.preorder_eta ? `, shipping ${deck.preorder_eta}` : ""}. Pre-orders are filled in the order they&apos;re placed.</p>}
           <button className="btn primary" style={{ width: "100%", justifyContent: "center" }} disabled={!canBuy}
-            onClick={() => add({ kind: "deck", id: deck.id, name: deck.name, detail: "Pre-built deck", price, max: deck.quantity })}>
-            {deck.quantity > 0 && inCart >= deck.quantity ? "All in cart" : "Add deck to cart"}
+            onClick={() => add({ kind: "deck", id: deck.id, name: deck.name, preorder, detail: preorder ? `Pre-order${deck.preorder_eta ? ` · ships ${deck.preorder_eta}` : ""}` : "Pre-built deck", price, max: avail.max })}>
+            {avail.mode === "soldout" ? "Sold out" : inCart >= avail.max ? "All in cart" : preorder ? "Pre-order this deck" : "Add deck to cart"}
           </button>
         </div>
       </div>

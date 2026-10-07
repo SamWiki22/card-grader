@@ -7,10 +7,12 @@ import InventoryTab from "../../components/admin/InventoryTab";
 import DecksTab from "../../components/admin/DecksTab";
 import MetaTab from "../../components/admin/MetaTab";
 import OrdersTab from "../../components/admin/OrdersTab";
+import SourcingTab from "../../components/admin/SourcingTab";
 
 const TABS = [
   ["meta", "Meta Decks"],
   ["decks", "Decks"],
+  ["sourcing", "Pre-orders & Sourcing"],
   ["inventory", "Singles Inventory"],
   ["orders", "Orders"],
 ];
@@ -60,6 +62,7 @@ export default function Admin() {
         </div>
         {tab === "meta" && <MetaTab onImported={goToDeck} />}
         {tab === "decks" && <DecksTab openDeck={openDeck} setOpenDeck={setOpenDeck} />}
+        {tab === "sourcing" && <SourcingTab onOpenDeck={goToDeck} />}
         {tab === "inventory" && <InventoryTab />}
         {tab === "orders" && <OrdersTab />}
       </>

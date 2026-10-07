@@ -40,6 +40,7 @@ main { padding: 24px 0 64px; }
 .stack > * + * { margin-top: 12px; }
 .badge { display: inline-block; font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--bg); border: 1px solid var(--border); }
 .badge.ok { color: var(--ok); } .badge.warn { color: var(--warn); } .badge.bad { color: var(--bad); }
+.badge.new { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
 .price { font-weight: 700; font-size: 17px; }
 .chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
 .chip { padding: 6px 12px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); cursor: pointer; font-size: 14px; text-decoration: none; }

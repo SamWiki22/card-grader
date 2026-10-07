@@ -3,6 +3,7 @@ import Link from "next/link";
 import Layout from "../components/Layout";
 import { useCart } from "../lib/cart";
 import { money } from "../lib/pricing";
+import { apiUrl } from "../lib/api";
 
 export default function Cart() {
   const { items, setQty, clear, total } = useCart();
@@ -16,10 +17,10 @@ export default function Cart() {
     setBusy(true);
     setError("");
     try {
-      const r = await fetch("/api/checkout", {
+      const r = await fetch(apiUrl("/api/checkout"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, items: items.map(i => ({ kind: i.kind, id: i.id, quantity: i.quantity })) }),
+        body: JSON.stringify({ ...form, items: items.map(i => ({ kind: i.kind, id: i.id, quantity: i.quantity, preorder: !!i.preorder })) }),
       });
       const body = await r.json();
       if (!r.ok) throw new Error(body.error || "Checkout failed");

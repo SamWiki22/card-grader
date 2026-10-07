@@ -2,6 +2,7 @@ import { useState } from "react";
 import { GAMES, GAME_MAP, NETDECK_SOURCES } from "../../lib/games";
 import { parseDecklist, deckSize } from "../../lib/decklist";
 import { importDeck } from "../../lib/deckImport";
+import { apiUrl } from "../../lib/api";
 
 // "Net-decking": pull top-finishing lists from tournament results (Limitless API) or paste a list
 // exported from any deck site, and turn it into a draft deck linked to singles inventory.
@@ -34,7 +35,7 @@ function LimitlessBrowser({ onImported }) {
   const loadTournaments = async () => {
     setBusy("tournaments"); setError(""); setEvent(null);
     try {
-      const r = await fetch(`/api/meta/tournaments?game=${encodeURIComponent(code)}&format=${encodeURIComponent(format)}&limit=30`);
+      const r = await fetch(apiUrl(`/api/meta/tournaments?game=${encodeURIComponent(code)}&format=${encodeURIComponent(format)}&limit=30`));
       const body = await r.json();
       if (!r.ok) throw new Error(body.error);
       setTournaments(body.tournaments);
@@ -45,7 +46,7 @@ function LimitlessBrowser({ onImported }) {
   const loadEvent = async id => {
     setBusy(id); setError("");
     try {
-      const r = await fetch(`/api/meta/standings?id=${encodeURIComponent(id)}&top=32`);
+      const r = await fetch(apiUrl(`/api/meta/standings?id=${encodeURIComponent(id)}&top=32`));
       const body = await r.json();
       if (!r.ok) throw new Error(body.error);
       setEvent(body);
