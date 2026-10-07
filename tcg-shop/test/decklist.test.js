@@ -175,3 +175,22 @@ test("card-id matching beats name and shows the real name", () => {
   assert.equal(m[0].name, "Monkey.D.Luffy");
   assert.equal(m[2].name, "Yuji Itadori");
 });
+
+test("real One Piece export (Blue Rocks): title, sections, header counts, rules", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { decklistMeta, deckWarnings } = await import("../lib/decklist.js");
+  const text = readFileSync(new URL("./fixtures/onepiece-blue-rocks.txt", import.meta.url), "utf8");
+  const cards = parseDecklist(text, { game: "onepiece" });
+  const meta = decklistMeta(text);
+  assert.equal(meta.title, "Blue Rocks Deck");
+  assert.deepEqual(meta.declared, { leader: 1, character: 42, event: 8 });
+  assert.deepEqual(cards[0], { section: "leader", count: 1, name: "Rocks.D.Xebec", set_code: "OP17", number: "OP17-039" });
+  assert.equal(cards.find(c => c.number === "OP17-055").name, "There's No Authority in the World That Lasts Forever!!!");
+  // Same name, different cards: leader and character Xebec stay separate.
+  assert.equal(cards.filter(c => c.name === "Rocks.D.Xebec").length, 2);
+  assert.deepEqual(deckWarnings(cards, "onepiece", meta.declared), []);
+
+  const broken = deckWarnings(cards.filter(c => c.number !== "OP17-050"), "onepiece", meta.declared);
+  assert.ok(broken.some(w => w.startsWith("character: header says 42, read 38")));
+  assert.ok(broken.some(w => w.includes("should be 50")));
+});

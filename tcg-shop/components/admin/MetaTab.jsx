@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ADMIN_GAMES as GAMES, DEFAULT_GAME, NETDECK_SOURCES } from "../../lib/games";
-import { parseDecklist, deckSize } from "../../lib/decklist";
+import { parseDecklist, deckSize, decklistMeta, deckWarnings } from "../../lib/decklist";
 import { importDeck } from "../../lib/deckImport";
 import { apiUrl } from "../../lib/api";
 
@@ -156,7 +156,15 @@ function PasteImport({ onImported }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const parsed = parseDecklist(f.text, { game: f.game });
+  const meta = decklistMeta(f.text);
+  const warnings = parsed.length ? deckWarnings(parsed, f.game, meta.declared) : [];
   const set = k => e => setF({ ...f, [k]: e.target.value });
+  // A pasted list's title line ("Blue Rocks Deck") fills in the deck name unless you've typed one.
+  const setText = e => {
+    const text = e.target.value;
+    const title = decklistMeta(text).title;
+    setF({ ...f, text, name: f.name && f.name !== decklistMeta(f.text).title ? f.name : title || f.name });
+  };
 
   const submit = async () => {
     setBusy(true); setError("");
@@ -185,13 +193,16 @@ function PasteImport({ onImported }) {
         <div><label>Source site</label><input value={f.source_name} onChange={set("source_name")} placeholder="e.g. Limitless" /></div>
         <div><label>Source URL</label><input value={f.source_url} onChange={set("source_url")} placeholder="https://…" /></div>
       </div>
-      <textarea value={f.text} onChange={set("text")} placeholder={"Leader\n1xOP09-001\nMain Deck\n4xOP01-016\n4 Nami (OP01-016)\n…or Riftbound: Legend: / Champion: / MainDeck: / Battlefields: / Runes:"} />
+      <textarea value={f.text} onChange={setText} placeholder={"Leader\n1xOP09-001\nMain Deck\n4xOP01-016\n4 Nami (OP01-016)\n…or Riftbound: Legend: / Champion: / MainDeck: / Battlefields: / Runes:"} />
       <div className="spread">
         <span className="small muted">
           Parsed {parsed.length} unique cards · {[...new Set(parsed.map(c => c.section))].map(s => `${s}: ${deckSize(parsed, s)}`).join(" · ") || "nothing yet"}
         </span>
         <button className="btn primary" onClick={submit} disabled={busy || !parsed.length || !f.name.trim()}>{busy ? "Importing…" : "Import as draft deck"}</button>
       </div>
+      {warnings.length > 0 && (
+        <ul className="small" style={{ color: "var(--warn)", margin: 0 }}>{warnings.map(w => <li key={w}>{w}</li>)}</ul>
+      )}
       {error && <div className="error">{error}</div>}
     </div>
   );

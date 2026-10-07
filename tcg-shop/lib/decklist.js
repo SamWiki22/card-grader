@@ -109,6 +109,44 @@ export function parseDecklist(text, { game } = {}) {
   return mergeDuplicates(out);
 }
 
+// Extra info from a pasted list: a title line ("Blue Rocks Deck") to use as the deck name, and the
+// counts headers declare ("Character (42)") so the importer can flag lines it couldn't read.
+export function decklistMeta(text) {
+  let title = "";
+  const declared = {};
+  for (const raw of String(text || "").replace(/\r/g, "").split("\n")) {
+    const line = raw.trim();
+    if (!line || /^(#|\/\/)/.test(line)) continue;
+    const header = !/^\d/.test(line) && line.match(SECTION_RE);
+    if (header) {
+      const n = line.match(/(\d+)\)?\s*:?$/);
+      if (n) declared[sectionName(header[1])] = (declared[sectionName(header[1])] || 0) + Number(n[1]);
+      continue;
+    }
+    if (!title && !parseCardLine(line) && !/^total/i.test(line)) title = line.replace(/^(name|deck)\s*:\s*/i, "").trim();
+  }
+  return { title, declared };
+}
+
+// Soft deck-construction checks for the admin preview (only rules we're sure of).
+export function deckWarnings(cards, game, declared = {}) {
+  const warnings = [];
+  for (const [section, n] of Object.entries(declared)) {
+    const got = deckSize(cards, section);
+    if (got !== n) warnings.push(`${section}: header says ${n}, read ${got}. Check for lines that didn't import.`);
+  }
+  if (game === "onepiece") {
+    const leaders = deckSize(cards, "leader");
+    const main = cards.filter(c => c.section !== "leader" && !/^(side|don)/.test(c.section)).reduce((s, c) => s + c.count, 0);
+    if (leaders !== 1) warnings.push(`One Piece decks need exactly 1 leader (found ${leaders}).`);
+    if (main !== 50) warnings.push(`One Piece main deck should be 50 cards (found ${main}).`);
+    const perId = new Map();
+    for (const c of cards) if (c.section !== "leader") perId.set(c.number || c.name, (perId.get(c.number || c.name) || 0) + c.count);
+    for (const [id, n] of perId) if (n > 4) warnings.push(`${id}: ${n} copies (max 4).`);
+  }
+  return warnings;
+}
+
 export function mergeDuplicates(cards) {
   const map = new Map();
   for (const c of cards) {
