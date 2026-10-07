@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { supabase, fetchAll } from "../../lib/supabaseClient";
-import { GAMES, gameLabel } from "../../lib/games";
+import { ADMIN_GAMES as GAMES, DEFAULT_GAME, gameLabel } from "../../lib/games";
 import { parseDecklist } from "../../lib/decklist";
 import { buildIndex, matchCard } from "../../lib/match";
 import { money } from "../../lib/pricing";
 
-const BLANK = { game: "pokemon", name: "", set_code: "", number: "", rarity: "", condition: "NM", finish: "", price: "", quantity: 1, image_url: "" };
+const BLANK = { game: DEFAULT_GAME, name: "", set_code: "", number: "", rarity: "", condition: "NM", finish: "", price: "", quantity: 1, image_url: "" };
 const CONDITIONS = ["NM", "LP", "MP", "HP", "DMG"];
 
 export default function InventoryTab() {
@@ -13,7 +13,7 @@ export default function InventoryTab() {
   const [game, setGame] = useState("");
   const [q, setQ] = useState("");
   const [form, setForm] = useState(BLANK);
-  const [bulk, setBulk] = useState({ open: false, game: "pokemon", text: "", price: "" });
+  const [bulk, setBulk] = useState({ open: false, game: DEFAULT_GAME, text: "", price: "" });
   const [msg, setMsg] = useState("");
   const [error, setError] = useState("");
 
@@ -64,7 +64,9 @@ export default function InventoryTab() {
       let added = 0, created = 0;
       for (const c of parsed) {
         const hit = c.set_code || c.number ? matchCard(c, index) : null;
-        const exact = hit && (!c.set_code || hit.set_code.toUpperCase() === c.set_code.toUpperCase()) ? hit : null;
+        const same = (a, b) => String(a || "").trim().toUpperCase() === String(b || "").trim().toUpperCase();
+        // Same printing = same number (card id for Bandai/Riftbound), and same set when the list gives one.
+        const exact = hit && (c.number ? same(hit.number, c.number) : true) && (!c.set_code || same(hit.set_code, c.set_code)) ? hit : null;
         if (exact) {
           const { error } = await supabase.from("cards").update({ quantity: exact.quantity + c.count, updated_at: new Date().toISOString() }).eq("id", exact.id);
           if (error) throw error;
@@ -94,8 +96,8 @@ export default function InventoryTab() {
         <div className="form-grid">
           <div><label>Game</label><select value={form.game} onChange={set("game")}>{GAMES.map(g => <option key={g.id} value={g.id}>{g.label}</option>)}</select></div>
           <div><label>Name *</label><input required value={form.name} onChange={set("name")} /></div>
-          <div><label>Set code</label><input value={form.set_code} onChange={set("set_code")} placeholder="SVI / MH3 / OP05" /></div>
-          <div><label>Number</label><input value={form.number} onChange={set("number")} /></div>
+          <div><label>Set code</label><input value={form.set_code} onChange={set("set_code")} placeholder="OP05 / GD01 / FB01" /></div>
+          <div><label>Number / card ID</label><input value={form.number} onChange={set("number")} placeholder="OP05-119 / GD01-001" /></div>
           <div><label>Rarity</label><input value={form.rarity} onChange={set("rarity")} /></div>
           <div><label>Finish</label><input value={form.finish} onChange={set("finish")} placeholder="Foil / Reverse holo" /></div>
           <div><label>Condition</label><select value={form.condition} onChange={set("condition")}>{CONDITIONS.map(c => <option key={c}>{c}</option>)}</select></div>
@@ -109,7 +111,7 @@ export default function InventoryTab() {
       {bulk.open && (
         <div className="card stack">
           <h3 style={{ margin: 0 }}>Bulk add (NM)</h3>
-          <p className="small muted">Paste one card per line, e.g. <code>4 Arven SVI 166</code> or a deck&apos;s buy list. Matching printings are restocked; new ones are created at the default price.</p>
+          <p className="small muted">Paste one card per line, e.g. <code>4 OP01-016</code>, <code>4 Nami (OP01-016)</code> or a deck&apos;s buy list. Matching printings are restocked; new ones are created at the default price.</p>
           <div className="form-grid">
             <div><label>Game</label><select value={bulk.game} onChange={e => setBulk({ ...bulk, game: e.target.value })}>{GAMES.map(g => <option key={g.id} value={g.id}>{g.label}</option>)}</select></div>
             <div><label>Default price for new cards</label><input type="number" step="0.01" value={bulk.price} onChange={e => setBulk({ ...bulk, price: e.target.value })} /></div>

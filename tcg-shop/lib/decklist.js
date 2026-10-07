@@ -3,12 +3,14 @@
 //   MTG Arena / MTGO:   "4 Lightning Bolt (M11) 146", "4 Lightning Bolt", "Sideboard" header,
 //                       or MTGO .txt where a blank line separates main from sideboard
 //   Pokémon TCG Live:   "Pokémon: 12" header, "4 Arven SVI 166", "* 4 Arven SVI 166"
-//   One Piece / Bandai: "4xOP01-016", "1 OP05-119"   (card id is used as the name)
+//   Bandai card ids:    "4xOP01-016", "1 OP05-119", "4 GD01-001", "4 FB01-001", "4 UE01BT/JJK-1-001"
+//                       (the id is used as the name), or "4 OP01-016 Nami" / "4 Nami (OP01-016)"
+//   Riftbound:          "Legend:", "Champion:", "MainDeck:", "Battlefields:", "Runes:" headers
 //   Generic:            "4x Name", "Name x4"
 // Lines that look like totals or comments are ignored.
 
 const SECTION_RE =
-  /^(pok[eé]mon|trainers?|energy|energies|deck|main\s*deck|main|maindeck|sideboard|side\s*deck|side|extra\s*deck|extra|leader|commander|companion|maybeboard|don!?!?(\s*deck)?|characters?|events?|stages?|songs?|items?|locations?|actions?|monsters?|spells?|traps?)\s*[:\-]?\s*(\(?\d+\)?)?\s*:?$/i;
+  /^(pok[eé]mon|trainers?|energy|energies|deck|main\s*deck|main|maindeck|sideboard|side\s*deck|side|extra\s*deck|extra|leader|commander|companion|maybeboard|don!?!?(\s*deck)?|legends?|champions?|runes?(\s*deck)?|battlefields?|resources?(\s*deck)?|characters?|events?|stages?|songs?|items?|locations?|actions?|monsters?|spells?|traps?)\s*[:\-]?\s*(\(?\d+\)?)?\s*:?$/i;
 
 const SECTION_ALIASES = {
   pokemon: "pokemon", "pokémon": "pokemon", trainer: "trainer", trainers: "trainer",
@@ -17,6 +19,10 @@ const SECTION_ALIASES = {
   sideboard: "sideboard", side: "sideboard", "side deck": "sideboard",
   extra: "extra", "extra deck": "extra",
   leader: "leader", commander: "commander", companion: "companion", maybeboard: "maybeboard",
+  legend: "legend", legends: "legend", champion: "champion", champions: "champion",
+  rune: "runes", runes: "runes", "rune deck": "runes", "runes deck": "runes",
+  battlefield: "battlefields", battlefields: "battlefields",
+  resource: "resources", resources: "resources", "resource deck": "resources", "resources deck": "resources",
 };
 
 function sectionName(raw) {
@@ -24,14 +30,23 @@ function sectionName(raw) {
   return SECTION_ALIASES[key] || key.replace(/[^a-z0-9 ]/g, "").trim() || "main";
 }
 
-// "OP01-016", "ST10-005", "EB01-001", "P-001", "FB01-001", "GD01-001"
-const CARD_ID_RE = /^[A-Z]{1,4}\d{0,3}-\d{2,4}[A-Z]?$/;
+// Bandai / Riot style card ids:
+//   One Piece "OP01-016", "ST10-005", "EB01-001", "P-001", parallel "OP01-016_p1"
+//   Gundam "GD01-001", Fusion World "FB01-001", "FS01-01"
+//   Union Arena "UE01BT/JJK-1-001", Riftbound "OGN-066", "OGN-066/298"
+const CARD_ID = "[A-Z][A-Z0-9]{0,7}(?:/[A-Z]{2,5})?-\\d{1,4}(?:-\\d{2,4})?[a-z]?(?:_[pP]\\d+)?(?:/\\d{2,4})?";
+export const CARD_ID_RE = new RegExp(`^${CARD_ID}$`);
+const idParts = id => ({ set_code: id.split(/[-/]/)[0], number: id });
 
 function parseCardLine(line) {
   let m;
-  // "4xOP01-016" / "4 OP01-016" / "4x OP01-016"
-  if ((m = line.match(/^(\d+)\s*[xX]?\s*([A-Z]{1,4}\d{0,3}-\d{2,4}[A-Z]?)$/)) && CARD_ID_RE.test(m[2])) {
-    return { count: +m[1], name: m[2], set_code: m[2].split("-")[0], number: m[2] };
+  // "4xOP01-016", "4 OP01-016", "4x OP01-016 Nami"
+  if ((m = line.match(new RegExp(`^(\\d+)\\s*[xX]?\\s*(${CARD_ID})(?:\\s+(.+))?$`)))) {
+    return { count: +m[1], name: m[3]?.trim() || m[2], ...idParts(m[2]) };
+  }
+  // "4 Nami (OP01-016)" / "4x Nami [OP01-016]"
+  if ((m = line.match(new RegExp(`^(\\d+)\\s*[xX]?\\s+(.+?)\\s*[\\(\\[](${CARD_ID})[\\)\\]]$`)))) {
+    return { count: +m[1], name: m[2].trim(), ...idParts(m[3]) };
   }
   // count first: "4 Name", "4x Name", "4 Name (SET) 123", "4 Name SET 123"
   if ((m = line.match(/^(\d+)\s*[xX]?\s+(.+)$/))) return { count: +m[1], ...parseNamePart(m[2]) };

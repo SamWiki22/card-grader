@@ -113,3 +113,65 @@ test("Limitless decklist normalization", () => {
   assert.equal(cards[1].section, "trainer");
   assert.deepEqual(normalizeLimitlessDecklist([{ count: 4, id: "OP01-016" }])[0].number, "OP01-016");
 });
+
+test("Bandai card-id formats for One Piece, Gundam, Fusion World, Union Arena", () => {
+  const cards = parseDecklist(`Leader
+1xOP09-001
+Main Deck
+4xOP01-016
+4 GD01-001
+4x FB01-001 Son Goku
+4 Nami (OP01-016_p1)
+3 UE01BT/JJK-1-001
+2xEB01-012`);
+  assert.deepEqual(cards[0], { section: "leader", count: 1, name: "OP09-001", set_code: "OP09", number: "OP09-001" });
+  assert.equal(cards[1].section, "main");
+  assert.deepEqual(cards[2], { section: "main", count: 4, name: "GD01-001", set_code: "GD01", number: "GD01-001" });
+  assert.deepEqual(cards[3], { section: "main", count: 4, name: "Son Goku", set_code: "FB01", number: "FB01-001" });
+  assert.deepEqual(cards[4], { section: "main", count: 4, name: "Nami", set_code: "OP01", number: "OP01-016_p1" });
+  assert.deepEqual(cards[5], { section: "main", count: 3, name: "UE01BT/JJK-1-001", set_code: "UE01BT", number: "UE01BT/JJK-1-001" });
+  assert.equal(cards[6].number, "EB01-012");
+});
+
+test("Riftbound sections and ids", () => {
+  const cards = parseDecklist(`Legend:
+1 Jinx, Loose Cannon
+Champion:
+1 Jinx, Demolitionist
+MainDeck:
+3 Get Excited!
+3 OGN-066/298
+Battlefields:
+1 Zaun Warrens
+Runes:
+6 Fury Rune
+Sideboard:
+2 Stacked Deck`);
+  assert.deepEqual(cards.map(c => c.section), ["legend", "champion", "main", "main", "battlefields", "runes", "sideboard"]);
+  assert.equal(cards[0].name, "Jinx, Loose Cannon");
+  assert.deepEqual(cards[3], { section: "main", count: 3, name: "OGN-066/298", set_code: "OGN", number: "OGN-066/298" });
+});
+
+test("Gundam resource deck header", () => {
+  const cards = parseDecklist("Deck\n4 GD01-001\nResource Deck\n10 R-001");
+  assert.deepEqual(cards.map(c => c.section), ["main", "resources"]);
+});
+
+test("card-id matching beats name and shows the real name", () => {
+  const inv = [
+    { id: "luffyA", name: "Monkey.D.Luffy", set_code: "OP01", number: "OP01-003", quantity: 9, price: 1 },
+    { id: "luffyB", name: "Monkey.D.Luffy", set_code: "OP05", number: "OP05-119", quantity: 1, price: 40 },
+    { id: "ua", name: "Yuji Itadori", set_code: "UE01BT", number: "UE01BT/JJK-1-001", quantity: 4, price: 0.25 },
+  ];
+  const m = matchDeck(
+    [
+      { count: 4, name: "OP05-119", set_code: "OP05", number: "OP05-119" },
+      { count: 4, name: "Monkey.D.Luffy", set_code: "", number: "OP05-119" },
+      { count: 4, name: "ue01bt/jjk-1-001", set_code: "", number: "" },
+    ],
+    inv,
+  );
+  assert.deepEqual(m.map(c => c.card_id), ["luffyB", "luffyB", "ua"]);
+  assert.equal(m[0].name, "Monkey.D.Luffy");
+  assert.equal(m[2].name, "Yuji Itadori");
+});

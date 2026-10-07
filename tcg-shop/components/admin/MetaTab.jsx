@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { GAMES, GAME_MAP, NETDECK_SOURCES } from "../../lib/games";
+import { ADMIN_GAMES as GAMES, DEFAULT_GAME, NETDECK_SOURCES } from "../../lib/games";
 import { parseDecklist, deckSize } from "../../lib/decklist";
 import { importDeck } from "../../lib/deckImport";
 import { apiUrl } from "../../lib/api";
@@ -16,8 +16,8 @@ export default function MetaTab({ onImported }) {
 }
 
 function LimitlessBrowser({ onImported }) {
-  const [game, setGame] = useState("pokemon");
-  const [code, setCode] = useState(GAME_MAP.pokemon.limitless);
+  const [game, setGame] = useState(DEFAULT_GAME);
+  const [code, setCode] = useState(() => savedCode(DEFAULT_GAME));
   const [format, setFormat] = useState("");
   const [tournaments, setTournaments] = useState(null);
   const [event, setEvent] = useState(null);
@@ -27,7 +27,7 @@ function LimitlessBrowser({ onImported }) {
 
   const pickGame = id => {
     setGame(id);
-    setCode(GAME_MAP[id].limitless || "");
+    setCode(savedCode(id));
     setTournaments(null);
     setEvent(null);
   };
@@ -35,6 +35,7 @@ function LimitlessBrowser({ onImported }) {
   const loadTournaments = async () => {
     setBusy("tournaments"); setError(""); setEvent(null);
     try {
+      try { localStorage.setItem(`limitless-code-${game}`, code); } catch (_) {}
       const r = await fetch(apiUrl(`/api/meta/tournaments?game=${encodeURIComponent(code)}&format=${encodeURIComponent(format)}&limit=30`));
       const body = await r.json();
       if (!r.ok) throw new Error(body.error);
@@ -79,10 +80,15 @@ function LimitlessBrowser({ onImported }) {
     <div className="card stack">
       <h2>Tournament results (Limitless TCG)</h2>
       <p className="muted small">Pick a recent event, browse top finishers, and import any list as a draft deck. Lists are credited to the player and event.</p>
+      <p className="muted small">
+        Tip: to get a game&apos;s code, open <a href="https://play.limitlesstcg.com/tournaments/completed" target="_blank" rel="noreferrer">Limitless completed tournaments</a>,
+        filter by the game, and copy the <code>game=</code> value from the address bar. It&apos;s remembered per game. If a game has no
+        events with public decklists there, use <em>Paste a decklist</em> below.
+      </p>
       <div className="form-grid">
         <div><label>Game</label>
           <select value={game} onChange={e => pickGame(e.target.value)}>{GAMES.map(g => <option key={g.id} value={g.id}>{g.label}</option>)}</select></div>
-        <div><label>Limitless game code</label><input value={code} onChange={e => setCode(e.target.value.toUpperCase())} placeholder="e.g. PTCG" /></div>
+        <div><label>Limitless game code</label><input value={code} onChange={e => setCode(e.target.value.toUpperCase())} placeholder="see tip below" /></div>
         <div><label>Format (optional)</label><input value={format} onChange={e => setFormat(e.target.value.toUpperCase())} placeholder="e.g. STANDARD" /></div>
         <div style={{ alignSelf: "end" }}><button className="btn primary" onClick={loadTournaments} disabled={!code || !!busy}>{busy === "tournaments" ? "Loading…" : "Load recent events"}</button></div>
       </div>
@@ -146,7 +152,7 @@ function FragmentRow({ p, open, onToggle, onImport, busy, disabled }) {
 }
 
 function PasteImport({ onImported }) {
-  const [f, setF] = useState({ game: "mtg", name: "", format: "", source_name: "", source_url: "", source_event: "", source_player: "", source_placing: "", text: "" });
+  const [f, setF] = useState({ game: DEFAULT_GAME, name: "", format: "", source_name: "", source_url: "", source_event: "", source_player: "", source_placing: "", text: "" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const parsed = parseDecklist(f.text, { game: f.game });
@@ -166,20 +172,20 @@ function PasteImport({ onImported }) {
     <div className="card stack">
       <h2>Paste a decklist (any game)</h2>
       <p className="muted small">
-        Use the site&apos;s <em>Export</em> / <em>Copy to clipboard</em> button (Arena, MTGO, PTCG Live, Bandai card-id lists and plain &ldquo;4 Card Name&rdquo; all work).
+        Use the site&apos;s <em>Export</em> / <em>Copy to clipboard</em> button (Bandai card-ID lists like <code>4xOP01-016</code>, Riftbound section lists, MTG Arena/MTGO and plain &ldquo;4 Card Name&rdquo; all work).
         {sources.length > 0 && <> Current results: {sources.map((s, i) => <span key={s.url}>{i ? ", " : ""}<a href={s.url} target="_blank" rel="noreferrer">{s.name}</a></span>)}.</>}
       </p>
       <div className="form-grid">
         <div><label>Game</label><select value={f.game} onChange={set("game")}>{GAMES.map(g => <option key={g.id} value={g.id}>{g.label}</option>)}</select></div>
-        <div><label>Deck name *</label><input value={f.name} onChange={set("name")} placeholder="e.g. Boros Energy" /></div>
-        <div><label>Format</label><input value={f.format} onChange={set("format")} placeholder="e.g. Modern" /></div>
-        <div><label>Event</label><input value={f.source_event} onChange={set("source_event")} placeholder="e.g. RC Atlanta 2026" /></div>
+        <div><label>Deck name *</label><input value={f.name} onChange={set("name")} placeholder="e.g. Red/Purple Luffy" /></div>
+        <div><label>Format</label><input value={f.format} onChange={set("format")} placeholder="e.g. OP-12 / Standard" /></div>
+        <div><label>Event</label><input value={f.source_event} onChange={set("source_event")} placeholder="e.g. Regionals, Store Championship" /></div>
         <div><label>Player</label><input value={f.source_player} onChange={set("source_player")} /></div>
         <div><label>Placing</label><input value={f.source_placing} onChange={set("source_placing")} placeholder="e.g. 1st, Top 8" /></div>
-        <div><label>Source site</label><input value={f.source_name} onChange={set("source_name")} placeholder="e.g. MTGTop8" /></div>
+        <div><label>Source site</label><input value={f.source_name} onChange={set("source_name")} placeholder="e.g. Limitless" /></div>
         <div><label>Source URL</label><input value={f.source_url} onChange={set("source_url")} placeholder="https://…" /></div>
       </div>
-      <textarea value={f.text} onChange={set("text")} placeholder={"4 Lightning Bolt (M11) 146\n4 Ragavan, Nimble Pilferer\n\nSideboard\n2 Blood Moon"} />
+      <textarea value={f.text} onChange={set("text")} placeholder={"Leader\n1xOP09-001\nMain Deck\n4xOP01-016\n4 Nami (OP01-016)\n…or Riftbound: Legend: / Champion: / MainDeck: / Battlefields: / Runes:"} />
       <div className="spread">
         <span className="small muted">
           Parsed {parsed.length} unique cards · {[...new Set(parsed.map(c => c.section))].map(s => `${s}: ${deckSize(parsed, s)}`).join(" · ") || "nothing yet"}
@@ -189,6 +195,10 @@ function PasteImport({ onImported }) {
       {error && <div className="error">{error}</div>}
     </div>
   );
+}
+
+function savedCode(game) {
+  try { return localStorage.getItem(`limitless-code-${game}`) || ""; } catch (_) { return ""; }
 }
 
 function placingLabel(n) {

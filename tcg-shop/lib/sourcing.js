@@ -1,4 +1,5 @@
 import { normName } from "./match.js";
+import { GAME_MAP } from "./games.js";
 
 // Turns "copies owed to pre-order customers + copies I want on the shelf" into one combined list
 // of singles to buy, across every deck. Cards are pooled by game + name (any printing plays the same),
@@ -18,7 +19,8 @@ export function sourcingPlan(decks, owed = {}, { bulkUnder = 1 } = {}) {
   for (const { deck, copies } of plan) {
     if (!copies) continue;
     for (const dc of deck.deck_cards) {
-      const key = `${deck.game}|${normName(dc.name)}`;
+      const id = GAME_MAP[deck.game]?.idDecklists && (dc.number || "").trim().toUpperCase();
+      const key = id ? `${deck.game}|id|${id}` : `${deck.game}|${normName(dc.name)}`;
       let row = pooled.get(key);
       if (!row) {
         row = { game: deck.game, name: dc.name, set_code: dc.set_code, number: dc.number, need: 0, linked: new Map(), decks: new Set() };
@@ -48,3 +50,6 @@ export function sourcingPlan(decks, owed = {}, { bulkUnder = 1 } = {}) {
 // TCGplayer Mass Entry / Card Kingdom / most "paste a list" carts accept "<qty> <name>" per line.
 // Names only, so the site's optimizer is free to pick the cheapest printing.
 export const massEntryList = rows => rows.map(r => `${r.short} ${r.name}`).join("\n");
+
+// For card-id games: "<qty> <name> <id>" so you (or a seller) can pick the exact card.
+export const idList = rows => rows.map(r => `${r.short} ${r.name}${r.number && r.number !== r.name ? ` ${r.number}` : ""}`).join("\n");

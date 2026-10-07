@@ -3,7 +3,7 @@ import { useRouter } from "next/router";
 import Layout, { GameChips, NotConfigured } from "../../components/Layout";
 import DeckTile from "../../components/DeckTile";
 import { supabase } from "../../lib/supabaseClient";
-import { GAMES } from "../../lib/games";
+import { LIVE_GAMES, LIVE_GAME_IDS } from "../../lib/games";
 import { byNewestSet, deckAvailability } from "../../lib/preorder";
 import { usePreorderCounts } from "../../lib/usePreorderCounts";
 
@@ -18,7 +18,7 @@ export default function Decks() {
 
   useEffect(() => {
     if (!router.isReady || !supabase) return;
-    let q = supabase.from("decks").select("*, deck_cards(count, card:cards(id,price,quantity))").eq("published", true);
+    let q = supabase.from("decks").select("*, deck_cards(count, card:cards(id,price,quantity))").eq("published", true).in("game", LIVE_GAME_IDS);
     if (game) q = q.eq("game", game);
     q.then(({ data }) => setDecks((data || []).sort(byNewestSet)));
   }, [router.isReady, game]);
@@ -34,7 +34,7 @@ export default function Decks() {
     <Layout title="Decks">
       <h1>Pre-built tournament decks</h1>
       <p className="muted">Complete copies of top-performing lists, newest sets first. Sold out? Pre-order and we&apos;ll build yours. Every deck credits the event and player it came from.</p>
-      <GameChips games={GAMES} value={game} onChange={g => go({ game: g })} />
+      <GameChips games={LIVE_GAMES} value={game} onChange={g => go({ game: g })} />
       <div className="chips">
         {VIEWS.map(([id, label]) => (
           <button key={id} className={`chip ${view === id ? "active" : ""}`} onClick={() => go({ view: id })}>{label}</button>

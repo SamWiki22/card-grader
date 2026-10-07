@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../../lib/supabaseClient";
-import { GAMES, gameLabel } from "../../lib/games";
+import { ADMIN_GAMES as GAMES, DEFAULT_GAME, gameLabel } from "../../lib/games";
 import { deckPricing, buildableCopies, shortfall, money } from "../../lib/pricing";
 import { deckSize, formatDecklist } from "../../lib/decklist";
 import { rematchDeck } from "../../lib/deckImport";

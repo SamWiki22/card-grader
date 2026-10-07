@@ -1,8 +1,15 @@
 # TCG Shop: singles + pre-built tournament decks
 
-A storefront for selling TCG singles and pre-built copies of current tournament decks
-(Pokémon, MTG, One Piece, Yu-Gi-Oh!, Lorcana, Dragon Ball, Gundam, Union Arena), with an
+A storefront for selling TCG singles and pre-built copies of current tournament decks, with an
 admin area to net-deck top lists, see what singles you're missing, and assemble decks from stock.
+
+**Live games:** One Piece, Gundam Card Game, Dragon Ball Super Fusion World, Union Arena, Riftbound.
+**Prepped, not live:** Magic: The Gathering. Visible in admin so you can stock it ahead of time; turn it
+on with `NEXT_PUBLIC_LIVE_GAMES` (see `.env.example`) or by changing its status in `lib/games.js`.
+
+**Card IDs:** for One Piece, Gundam, Fusion World and Union Arena, stock singles with the card ID in the
+*Number / card ID* field (e.g. `OP05-119`, `GD01-001`, `FB01-001`, `UE01BT/JJK-1-001`). Decklists for these
+games are usually card IDs, and many cards share a name, so decks link to singles by ID.
 
 Same stack as `bb-inventory`: Next.js (pages router) + Supabase. Payments via Stripe Checkout (optional).
 
@@ -20,11 +27,13 @@ webhook to `https://<your-site>/api/stripe-webhook` for `checkout.session.comple
 
 ## Workflow: from a tournament result to a deck on the shelf
 1. **Admin → Meta Decks**
-   * *Tournament results*: Pokémon (and other games Limitless hosts): load recent events, open the
-     top finishers, and **Import** a list.
-   * *Paste a decklist*: any game. Use the Export/Copy button on MTGTop8, MTGGoldfish, MTGO,
-     Limitless, YGOPRODeck, Inkdecks, and similar sites (links are shown per game). Arena, MTGO, PTCG Live,
-     Bandai card-id (`4xOP01-016`) and plain `4 Card Name` formats are all understood.
+   * *Tournament results*: for games with events on play.limitlesstcg.com, load recent events, open the
+     top finishers, and **Import** a list. The game code is the `game=` value in the Limitless URL when
+     you filter by game; the admin remembers it per game.
+   * *Paste a decklist*: any game. Use the Export/Copy button on the deck site (links shown per game).
+     Understood: Bandai card-ID lists (`4xOP01-016`, `4 Nami (OP01-016)`, Union Arena `UE01BT/JJK-1-001`)
+     with Leader / Main Deck / Resource Deck sections, Riftbound lists with Legend / Champion / MainDeck /
+     Battlefields / Runes sections, MTG Arena/MTGO, and plain `4 Card Name`.
    Imports become **draft** decks credited to the player, placing and event.
 2. **Admin → Decks**: each card is auto-linked to your singles inventory. The table shows
    need/have/short; **Copy buy list** gives you exactly what to source.

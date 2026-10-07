@@ -2,6 +2,7 @@ import { supabaseAdmin } from "../../lib/supabaseAdmin";
 import { deckPricing, round2 } from "../../lib/pricing";
 import { createCheckoutSession } from "../../lib/stripe";
 import { deckAvailability } from "../../lib/preorder";
+import { isLiveGame } from "../../lib/games";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const UUID_RE = /^[0-9a-f-]{36}$/i;
@@ -24,11 +25,11 @@ export default async function handler(req, res) {
   const cardIds = items.filter(i => i.kind === "card").map(i => i.id);
   const deckIds = items.filter(i => i.kind === "deck").map(i => i.id);
   const [cardsRes, decksRes, openRes] = await Promise.all([
-    cardIds.length ? supabaseAdmin.from("cards").select("id,name,set_code,condition,price,quantity").in("id", cardIds) : { data: [] },
+    cardIds.length ? supabaseAdmin.from("cards").select("id,game,name,set_code,condition,price,quantity").in("id", cardIds) : { data: [] },
     deckIds.length
       ? supabaseAdmin
           .from("decks")
-          .select("id,name,price,discount_pct,quantity,published,preorder_enabled,preorder_limit,preorder_eta,deck_cards(count,card:cards(id,price,quantity))")
+          .select("id,game,name,price,discount_pct,quantity,published,preorder_enabled,preorder_limit,preorder_eta,deck_cards(count,card:cards(id,price,quantity))")
           .in("id", deckIds)
       : { data: [] },
     deckIds.length ? supabaseAdmin.rpc("preorder_open_counts") : { data: [] },
@@ -43,14 +44,14 @@ export default async function handler(req, res) {
   for (const it of items) {
     if (it.kind === "card") {
       const c = cards[it.id];
-      if (!c || Number(c.price) <= 0) return res.status(409).json({ error: "An item in your cart is no longer available" });
+      if (!c || !isLiveGame(c.game) || Number(c.price) <= 0) return res.status(409).json({ error: "An item in your cart is no longer available" });
       if (c.quantity < it.quantity) return res.status(409).json({ error: `Only ${c.quantity} of ${c.name} left in stock` });
       const label = [c.name, c.set_code, c.condition].filter(Boolean).join(" · ");
       lines.push({ kind: "card", ref_id: c.id, name: label, unit_price: Number(c.price), quantity: it.quantity });
     } else {
       const d = decks[it.id];
       const { price } = d ? deckPricing(d, d.deck_cards) : {};
-      if (!d || !d.published || !price) return res.status(409).json({ error: "A deck in your cart is no longer available" });
+      if (!d || !isLiveGame(d.game) || !d.published || !price) return res.status(409).json({ error: "A deck in your cart is no longer available" });
       const avail = deckAvailability(d, openPreorders[d.id] || 0);
       const preorder = avail.mode === "preorder";
       // A pre-order that's now in stock just ships from stock; a stock purchase never silently becomes a

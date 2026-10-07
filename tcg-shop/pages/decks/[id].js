@@ -4,7 +4,7 @@ import Link from "next/link";
 import Layout from "../../components/Layout";
 import { sourceLine, SetBadge, AvailabilityBadge } from "../../components/DeckTile";
 import { supabase } from "../../lib/supabaseClient";
-import { gameLabel } from "../../lib/games";
+import { gameLabel, isLiveGame } from "../../lib/games";
 import { deckPricing, money } from "../../lib/pricing";
 import { formatDecklist, deckSize } from "../../lib/decklist";
 import { useCart } from "../../lib/cart";
@@ -38,7 +38,7 @@ export default function DeckPage() {
   }, [deck]);
 
   if (deck === undefined) return <Layout><p className="muted">Loading…</p></Layout>;
-  if (!deck) return <Layout><h1>Deck not found</h1><Link href="/decks">Back to decks</Link></Layout>;
+  if (!deck || !isLiveGame(deck.game)) return <Layout><h1>Deck not found</h1><Link href="/decks">Back to decks</Link></Layout>;
 
   const { price, singlesTotal, complete, savings } = deckPricing(deck, deck.deck_cards);
   const source = sourceLine(deck);

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase, fetchAll } from "../../lib/supabaseClient";
-import { gameLabel } from "../../lib/games";
-import { sourcingPlan, massEntryList } from "../../lib/sourcing";
+import { gameLabel, GAME_MAP } from "../../lib/games";
+import { sourcingPlan, massEntryList, idList } from "../../lib/sourcing";
 import { money } from "../../lib/pricing";
 
 const TIERS = [
@@ -85,7 +85,7 @@ export default function SourcingTab({ onOpenDeck }) {
             <a href="https://www.tcgplayer.com/massentry" target="_blank" rel="noreferrer">TCGplayer Mass Entry ↗</a>
           </div>
         </div>
-        <p className="small muted">Pooled across every deck in the queue, minus singles you already have. Copy a list and paste it into Mass Entry (names only, so the optimizer can pick the cheapest printing), then bulk-add what arrives on the Singles Inventory tab.</p>
+        <p className="small muted">Pooled across every deck in the queue, minus singles you already have. <em>Copy names</em> pastes into TCGplayer Mass Entry so its optimizer picks the cheapest printing. For card-number games (One Piece, Gundam, Fusion World, Union Arena), many cards share a name, so use <em>Copy with card #</em> to buy the exact card. Then bulk-add what arrives on the Singles Inventory tab.</p>
         {rows.length === 0 && <p className="muted">You have every single you need. Go build!</p>}
         {games.map(game => TIERS.map(([tier, label, hint]) => {
           const list = rows.filter(r => r.game === game && r.tier === tier);
@@ -95,13 +95,18 @@ export default function SourcingTab({ onOpenDeck }) {
             <div key={key} className="stack">
               <div className="spread">
                 <div><strong>{gameLabel(game)}: {label}</strong> <span className="small muted">({list.reduce((s, r) => s + r.short, 0)} cards) {hint}</span></div>
-                <button className="btn small" onClick={() => copy(key, massEntryList(list))}>{copied === key ? "Copied!" : "Copy list"}</button>
+                <div className="row">
+                  {GAME_MAP[game]?.idDecklists && (
+                    <button className="btn small" onClick={() => copy(`${key}-id`, idList(list))}>{copied === `${key}-id` ? "Copied!" : "Copy with card #"}</button>
+                  )}
+                  <button className="btn small" onClick={() => copy(key, massEntryList(list))}>{copied === key ? "Copied!" : "Copy names"}</button>
+                </div>
               </div>
               <div className="scroll-x"><table>
                 <thead><tr><th>Buy</th><th>Card</th><th>Need</th><th>Have</th><th>Your price</th><th>For decks</th></tr></thead>
                 <tbody>
                   {list.map(r => (
-                    <tr key={r.name}>
+                    <tr key={`${r.name}|${r.number}`}>
                       <td><strong>{r.short}</strong></td>
                       <td>{r.name} <span className="small muted">{r.set_code} {r.number !== r.name ? r.number : ""}</span></td>
                       <td>{r.need}</td><td>{r.have}</td><td>{money(r.price)}</td>

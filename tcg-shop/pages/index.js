@@ -3,7 +3,7 @@ import Link from "next/link";
 import Layout, { NotConfigured } from "../components/Layout";
 import DeckTile from "../components/DeckTile";
 import { supabase } from "../lib/supabaseClient";
-import { GAMES } from "../lib/games";
+import { LIVE_GAMES, LIVE_GAME_IDS } from "../lib/games";
 import { byNewestSet, deckAvailability } from "../lib/preorder";
 import { usePreorderCounts } from "../lib/usePreorderCounts";
 
@@ -16,6 +16,7 @@ export default function Home() {
       .from("decks")
       .select("*, deck_cards(count, card:cards(id,price,quantity))")
       .eq("published", true)
+      .in("game", LIVE_GAME_IDS)
       .order("updated_at", { ascending: false })
       .limit(60)
       .then(({ data }) => setDecks((data || []).sort(byNewestSet)));
@@ -28,7 +29,7 @@ export default function Home() {
     <Layout>
       <section className="hero">
         <h1>Tournament-proven decks, built from the newest sets</h1>
-        <p>Pre-order the lists winning events right now and we&apos;ll build them for you, or grab a built deck off the shelf. Singles available to finish or upgrade your own.</p>
+        <p>Pre-order the lists winning events right now and we&apos;ll build them for you, or grab a built deck off the shelf. One Piece, Gundam, Dragon Ball Fusion World, Union Arena and Riftbound, plus singles to finish or upgrade your own.</p>
         <div className="row">
           <Link href="/decks" className="btn">Shop decks</Link>
           <Link href="/decks?view=preorder" className="btn">Pre-orders</Link>
@@ -50,7 +51,7 @@ export default function Home() {
       )}
       <h2>Games</h2>
       <div className="grid">
-        {GAMES.map(g => (
+        {LIVE_GAMES.map(g => (
           <Link key={g.id} href={`/decks?game=${g.id}`} className="card link">
             <div style={{ fontSize: 26 }}>{g.icon}</div>
             <strong>{g.label}</strong>

@@ -40,3 +40,17 @@ test("sourcing pools cards across decks and splits bulk vs staples", () => {
   assert.equal(rows.find(r => r.name === "New Card").tier, "unknown");
   assert.match(massEntryList(rows), /^10 Ultra Ball$/m);
 });
+
+test("card-id games pool by card number, not name", () => {
+  const decks = [
+    { id: "a", name: "Red Luffy", game: "onepiece", quantity: 0, target_stock: 1,
+      deck_cards: [{ count: 4, name: "Monkey.D.Luffy", number: "OP01-003", card: null }] },
+    { id: "b", name: "Purple Luffy", game: "onepiece", quantity: 0, target_stock: 1,
+      deck_cards: [{ count: 4, name: "Monkey.D.Luffy", number: "OP05-119", card: null }, { count: 2, name: "Nami", number: "OP01-016", card: null }] },
+    { id: "c", name: "Other", game: "onepiece", quantity: 0, target_stock: 1,
+      deck_cards: [{ count: 2, name: "Nami", number: "OP01-016", card: null }] },
+  ];
+  const { rows } = sourcingPlan(decks);
+  assert.equal(rows.filter(r => r.name === "Monkey.D.Luffy").length, 2);
+  assert.equal(rows.find(r => r.name === "Nami").short, 4);
+});

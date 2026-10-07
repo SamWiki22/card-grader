@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
 import Layout, { GameChips, NotConfigured } from "../components/Layout";
 import { supabase } from "../lib/supabaseClient";
-import { GAMES, gameLabel } from "../lib/games";
+import { LIVE_GAMES, LIVE_GAME_IDS, gameLabel } from "../lib/games";
 import { money } from "../lib/pricing";
 import { useCart } from "../lib/cart";
 
@@ -20,7 +20,7 @@ export default function Singles() {
   const load = async (offset = 0) => {
     if (!supabase) return;
     setLoading(true);
-    let query = supabase.from("cards").select("*").gt("quantity", 0).gt("price", 0).order("name").range(offset, offset + PAGE - 1);
+    let query = supabase.from("cards").select("*").gt("quantity", 0).gt("price", 0).in("game", LIVE_GAME_IDS).order("name").range(offset, offset + PAGE - 1);
     if (game) query = query.eq("game", game);
     if (q.trim()) query = query.ilike("name", `%${q.trim().replace(/[%_]/g, "")}%`);
     const { data } = await query;
@@ -40,7 +40,7 @@ export default function Singles() {
   return (
     <Layout title="Singles">
       <h1>Singles</h1>
-      <GameChips games={GAMES} value={game} onChange={g => router.replace({ query: g ? { game: g } : {} }, undefined, { shallow: true })} />
+      <GameChips games={LIVE_GAMES} value={game} onChange={g => router.replace({ query: g ? { game: g } : {} }, undefined, { shallow: true })} />
       <input placeholder="Search card name…" value={q} onChange={e => setQ(e.target.value)} style={{ marginBottom: 16, maxWidth: 420 }} />
       {!supabase && <NotConfigured />}
       <div className="grid">
