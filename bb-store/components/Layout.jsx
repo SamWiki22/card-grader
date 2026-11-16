@@ -48,6 +48,7 @@ export default function Layout({ title, description, children }) {
             <Link href="/shop?category=singles">Singles</Link>
             <Link href="/shop?category=sealed">Sealed</Link>
             <Link href="/packs">Packs</Link>
+            <Link href="/sell">Sell your cards</Link>
             <Link href="/packs/rules">Pack rules &amp; odds</Link>
             <Link href="/cart">Cart</Link>
           </div>

@@ -92,6 +92,7 @@ const MESSAGES = {
   NOT_YOURS: "That card isn’t in your vault anymore.",
   NO_CARDS: "Pick at least one card.",
   NO_PROFILE: "Please sign in again.",
+  NOT_ACCEPTED: "That submission isn’t waiting to be paid.",
 };
 export function friendlyError(error) {
   const code = Object.keys(MESSAGES).find(k => (error?.message || "").includes(k));

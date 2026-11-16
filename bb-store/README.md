@@ -47,7 +47,7 @@ or on demand with **Refresh TCGplayer prices** in admin. Backup price: each card
 and it's used automatically when TCGplayer has no price. Games: Pokémon, Magic, Dragon Ball (Fusion World and
 Masters catalogs) and One Piece each have five tiers.
 
-Pages: `/packs` (open) · `/vault` (cards, sell back, ship, activity) · `/packs/rules` · `/admin/packs`.
+Pages: `/packs` (open) · `/vault` (cards, sell back, ship) · `/sell` (players sell you cards for pack credit) · `/account` · `/packs/rules` · `/admin/packs`.
 
 ### Setup
 1. Supabase → SQL Editor → run `supabase/packs.sql` (safe to re-run). It creates the pack tables

@@ -46,6 +46,7 @@ and logins, the same project BB Inventory already uses), **Vercel** (hosting), a
    | `SUPABASE_ANON_KEY` | anon public key |
    | `SUPABASE_SERVICE_ROLE_KEY` | service_role key |
    | `ADMIN_EMAILS` | your email (comma-separate several) |
+   | `SHOP_ADDRESS` | where players mail cards they sell you, lines split with `|` (e.g. `Bearded Bear TCG \| 123 Main St \| City, ST 00000`) |
    | `CRON_SECRET` | any long random string (protects the daily TCGplayer price sync) |
    | `VAULT_SHIP_FEE_CENTS` | `500` (= $5 to ship vault cards) |
    | `SHIPPING_FLAT_CENTS` | `500` (store orders) |
@@ -76,6 +77,15 @@ and logins, the same project BB Inventory already uses), **Vercel** (hosting), a
    Graded slabs: TCGplayer prices raw cards, so for slabs click **Add** under **Last sold** instead. Enter the
    last sale price from eBay, Goldin or Card Ladder (with the link), and tick "Use this sale as the card's value".
    A last sale on a TCGplayer-synced card is kept as its backup price, used whenever TCGplayer has none.
+
+### Buying cards from players (Sell tab)
+Players submit a card from **Sell** with photos, grade and an optional TCGplayer match. In `/admin/packs` → **Card submissions**:
+1. Check the photos. Use the **eBay sold** / **Card Ladder** links to price it, enter **Our value**, and the **Offer**
+   fills in from your buyback rates (edit it if you like). Then click **Send offer**.
+2. The player sees the offer, with a badge on the Sell tab, and accepts or declines.
+3. Accepted cards show your `SHOP_ADDRESS` and a code like `BB-7K3QX` to put in the package.
+4. When it arrives and matches the photos, pick the pool and click **Card arrived — pay**. The player is credited
+   and the card joins the pool with their photo. If it doesn't match, click **Card not as described**.
 
 ## Step 6 — Your own domain (optional)
 1. In Vercel, open the project, go to **Settings → Domains**, and add e.g. `beardedbeartcg.com`.

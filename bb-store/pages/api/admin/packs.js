@@ -20,13 +20,21 @@ export default async function handler(req, res) {
   if (!admin) return;
 
   if (req.method === "GET") {
-    const [tiers, cards, ships, rules, items] = await Promise.all([
+    const SUB_COLS = "id,user_id,game,name,set_name,card_number,grade,asking_cents,note,tcg_product_id,market_cents,value_cents,offer_cents,admin_note,status,card_id,created_at,updated_at";
+    const [tiers, cards, ships, rules, items, openSubs, closedSubs] = await Promise.all([
       listTiers({ includeInactive: true }),
       db.from("pack_cards").select(`id,tier_id,name,set_name,grade,market_value_cents,weight,buyback_percent,status,owner_id,created_at,${TCG_COLS}`).order("created_at", { ascending: false }),
       db.from("shipments").select("*").order("created_at", { ascending: false }).limit(100),
       getBuybackRules(),
       db.from("items").select(`id,name,set_name,game,condition,quantity,price,${TCG_COLS}`).eq("type", "single").order("name"),
+      db.from("submissions").select(SUB_COLS).in("status", ["submitted", "offered", "accepted"]).order("created_at"),
+      db.from("submissions").select(SUB_COLS).in("status", ["paid", "declined", "rejected"]).order("updated_at", { ascending: false }).limit(20),
     ]);
+    const subs = [...(openSubs.data || []), ...(closedSubs.data || [])];
+    const ids = [...new Set(subs.map(s => s.user_id))];
+    const { data: people } = ids.length ? await db.from("profiles").select("user_id,email").in("user_id", ids) : { data: [] };
+    const emailOf = Object.fromEntries((people || []).map(p => [p.user_id, p.email]));
+    const submissions = subs.map(({ user_id, ...s }) => ({ ...s, email: emailOf[user_id] || "" }));
     const all = cards.data || [];
     const stats = tiers.map(t => {
       const pool = all.filter(c => c.tier_id === t.id && c.status === "available");
@@ -35,7 +43,7 @@ export default async function handler(req, res) {
     });
     const names = Object.fromEntries(all.map(c => [c.id, `${c.name}${c.grade ? ` (${c.grade})` : ""}`]));
     const shipments = (ships.data || []).map(s => ({ ...s, cards: s.card_ids.map(id => names[id] || id) }));
-    return res.json({ tiers: stats, cards: all, shipments, rules, items: items.data || [], tcgSources: TCG_SOURCES.map(({ id, game, label }) => ({ id, game, label })) });
+    return res.json({ tiers: stats, cards: all, shipments, rules, submissions, items: items.data || [], tcgSources: TCG_SOURCES.map(({ id, game, label }) => ({ id, game, label })) });
   }
 
   if (req.method !== "POST") return res.status(405).end();
@@ -140,6 +148,30 @@ export default async function handler(req, res) {
       result = await db.from(table).update(patch).eq("id", String(b.id));
       break;
     }
+
+    // Player-submitted cards: make an offer, reject, or (once the card arrives) pay + add to a pool.
+    case "offer-submission": {
+      const offer = cents(b.offer), value = cents(b.value);
+      if (!(offer >= 0) || !(value >= 0)) return res.status(400).json({ error: "Enter an offer and a value." });
+      const { data } = await db.from("submissions")
+        .update({ offer_cents: offer, value_cents: value, admin_note: String(b.note || "").slice(0, 500), status: "offered", updated_at: new Date().toISOString() })
+        .eq("id", String(b.id)).in("status", ["submitted", "offered"]).select("id");
+      if (!data?.length) return res.status(409).json({ error: "That submission can’t take an offer right now." });
+      return res.json({ ok: true });
+    }
+
+    case "reject-submission": {
+      const { data } = await db.from("submissions")
+        .update({ status: "rejected", admin_note: String(b.note || "").slice(0, 500), updated_at: new Date().toISOString() })
+        .eq("id", String(b.id)).in("status", ["submitted", "offered", "accepted"]).select("id");
+      if (!data?.length) return res.status(409).json({ error: "That submission is already closed." });
+      return res.json({ ok: true });
+    }
+
+    case "pay-submission":
+      result = await db.rpc("pay_submission", { p_id: String(b.id), p_tier: String(b.tier || ""), p_value: cents(b.value), p_card_id: randomBytes(8).toString("hex") });
+      if (result.error?.message?.includes("NOT_ACCEPTED")) return res.status(409).json({ error: "The player hasn’t accepted this offer (or it’s already paid)." });
+      break;
 
     case "unlink-tcg": {
       const table = b.target === "item" ? "items" : "pack_cards";

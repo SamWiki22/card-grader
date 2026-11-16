@@ -332,3 +332,64 @@ insert into pack_tiers (id, game, name, price_cents, color, sort) values
   ('dbs-polar',    'dbs', 'Polar',   5000,  '#4fc3b6', 4),
   ('dbs-alpha',    'dbs', 'Alpha',   10000, '#c0457a', 5)
 on conflict (id) do nothing;
+
+-- ── v4: players sell their own cards into the pack pools ─────────────────
+-- Flow: submitted → (we) offered → (player) accepted / declined → (we) paid,
+-- or rejected. Paying credits the player's balance and adds the card to a pool.
+create table if not exists submissions (
+  id text primary key,                         -- short code players write on the package, e.g. BB-7K3QX
+  user_id uuid not null references auth.users(id) on delete cascade,
+  game text not null,
+  name text not null,
+  set_name text not null default '',
+  card_number text not null default '',
+  grade text not null default '',
+  asking_cents bigint check (asking_cents >= 0),
+  note text not null default '',
+  photo_front text not null,
+  photo_back text,
+  tcg_category_id integer,
+  tcg_group_id integer,
+  tcg_product_id integer,
+  tcg_subtype text,
+  market_cents bigint,                         -- TCGplayer market at submit time, if linked
+  value_cents bigint,                          -- our valuation once the card joins a pool
+  offer_cents bigint,
+  admin_note text not null default '',
+  status text not null default 'submitted',    -- submitted | offered | accepted | declined | rejected | paid
+  card_id text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists submissions_user on submissions (user_id, created_at desc);
+create index if not exists submissions_status on submissions (status, created_at);
+alter table submissions enable row level security;
+
+-- Card arrived and checks out: pay the player and put the card in a pool.
+create or replace function pay_submission(p_id text, p_tier text, p_value bigint, p_card_id text)
+returns jsonb language plpgsql as $$
+declare
+  s submissions;
+  bal bigint;
+begin
+  select * into s from submissions where id = p_id and status = 'accepted' for update;
+  if not found then raise exception 'NOT_ACCEPTED'; end if;
+  if not exists (select 1 from pack_tiers where id = p_tier) then raise exception 'TIER_UNAVAILABLE'; end if;
+  if p_value < 0 then raise exception 'BAD_AMOUNT'; end if;
+
+  insert into pack_cards (id, tier_id, name, set_name, grade, market_value_cents, image,
+                          tcg_category_id, tcg_group_id, tcg_product_id, tcg_subtype)
+  values (p_card_id, p_tier, s.name || case when s.card_number <> '' then ' ' || s.card_number else '' end,
+          s.set_name, s.grade, p_value, s.photo_front,
+          s.tcg_category_id, s.tcg_group_id, s.tcg_product_id, s.tcg_subtype);
+
+  insert into profiles (user_id) values (s.user_id) on conflict do nothing;
+  update profiles set balance_cents = balance_cents + s.offer_cents where user_id = s.user_id returning balance_cents into bal;
+  insert into ledger (user_id, kind, amount_cents, note, ref)
+    values (s.user_id, 'card_sale', s.offer_cents, 'Sold to Bearded Bear: ' || s.name, s.id);
+  update submissions set status = 'paid', value_cents = p_value, card_id = p_card_id, updated_at = now() where id = p_id;
+  return jsonb_build_object('balance_cents', bal, 'card_id', p_card_id);
+end $$;
+
+revoke all on function pay_submission(text, text, bigint, text) from public, anon, authenticated;
+grant execute on function pay_submission(text, text, bigint, text) to service_role;

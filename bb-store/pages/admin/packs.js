@@ -84,6 +84,8 @@ export default function AdminPacks() {
         </div>
         {msg && <p className={msg.startsWith("Error") ? "error" : "banner light"}>{msg}</p>}
 
+        <Submissions subs={data.submissions} tiers={data.tiers} rules={data.rules} act={act} />
+
         <h2 className="sub-title">Tiers</h2>
         <div className="table-wrap">
           <table className="table">
@@ -346,11 +348,87 @@ function CompEditor({ row, onSave, onClose }) {
           <label className="field">Date<input className="input" type="date" value={date} onChange={e => setDate(e.target.value)} /></label>
         </div>
         <label className="field">Link to the sale (optional)<input className="input" type="url" placeholder="https://www.ebay.com/itm/…" value={url} onChange={e => setUrl(e.target.value)} /></label>
+        <p className="small research">Look it up: <a href={ebaySold(row.name, row.grade)} target="_blank" rel="noreferrer">eBay sold listings</a> · <a href="https://app.cardladder.com/" target="_blank" rel="noreferrer">Card Ladder</a> · <a href={`https://goldin.co/search?q=${encodeURIComponent(row.name)}`} target="_blank" rel="noreferrer">Goldin</a></p>
         {synced
           ? <p className="muted small">This card’s price syncs from TCGplayer. The last sale is kept as the backup and used automatically whenever TCGplayer has no price.</p>
           : <label className="check"><input type="checkbox" checked={use} onChange={e => setUse(e.target.checked)} /><span>Use this sale as the card’s value (best for graded slabs)</span></label>}
         <button className="btn btn-block">Save last sale</button>
       </form>
     </Modal>
+  );
+}
+
+// eBay search limited to sold listings.
+const ebaySold = (name, grade) => `https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent([name, grade && !/^raw/i.test(grade) ? grade : ""].filter(Boolean).join(" "))}&LH_Sold=1&LH_Complete=1`;
+
+const SUB_STATUS = { submitted: "New", offered: "Offer sent", accepted: "Accepted — awaiting card", paid: "Paid", declined: "Player declined", rejected: "Rejected" };
+
+// Player-submitted cards: review → offer → (player accepts) → card arrives → pay + add to a pool.
+function Submissions({ subs, tiers, rules, act }) {
+  const open = subs.filter(s => ["submitted", "offered", "accepted"].includes(s.status));
+  const closed = subs.filter(s => !["submitted", "offered", "accepted"].includes(s.status));
+  return (
+    <>
+      <h2 className="sub-title">Card submissions ({open.filter(s => s.status !== "offered").length} need you)</h2>
+      {!open.length && <p className="muted">No cards waiting. Players submit from the Sell tab.</p>}
+      {open.map(s => <SubmissionCard key={s.id} s={s} tiers={tiers.filter(t => t.game === s.game)} rules={rules} act={act} />)}
+      {closed.length > 0 && (
+        <details className="closed-subs">
+          <summary>Recently closed ({closed.length})</summary>
+          <ul>{closed.map(s => <li key={s.id}><b>{s.id}</b> · {s.name} · {SUB_STATUS[s.status]}{s.status === "paid" ? ` · paid ${centsToMoney(s.offer_cents)}` : ""} · {s.email}</li>)}</ul>
+        </details>
+      )}
+    </>
+  );
+}
+
+function SubmissionCard({ s, tiers, rules, act }) {
+  const startValue = s.value_cents ?? s.market_cents ?? s.asking_cents ?? 0;
+  const [value, setValue] = useState((startValue / 100).toFixed(2));
+  const [offer, setOffer] = useState(((s.offer_cents ?? Math.floor(startValue * ruleFor(startValue, rules) / 100)) / 100).toFixed(2));
+  const [note, setNote] = useState(s.admin_note || "");
+  const v = Math.round(Number(value) * 100);
+  // Suggest the priciest tier the card is still worth at least ~3x… or the cheapest tier.
+  const suggested = [...tiers].sort((a, b) => b.price_cents - a.price_cents).find(t => v >= t.price_cents * 3) || [...tiers].sort((a, b) => a.price_cents - b.price_cents)[0];
+  const [tier, setTier] = useState(suggested?.id || "");
+  const img = side => `/api/submission-photo/${encodeURIComponent(s.id)}?side=${side}`;
+
+  return (
+    <div className="sub-card">
+      <div className="sub-photos">
+        <a href={img("front")} target="_blank" rel="noreferrer"><img src={img("front")} alt="Front" /></a>
+        <a href={img("back")} target="_blank" rel="noreferrer"><img src={img("back")} alt="Back" onError={e => { e.currentTarget.parentElement.style.display = "none"; }} /></a>
+      </div>
+      <div className="sub-details">
+        <div><b>{s.name}</b> <span className="muted">{[s.set_name, s.card_number].filter(Boolean).join(" · ")}</span></div>
+        <div className="small">{GAME_LABEL[s.game]} · <b>{s.grade || "No grade given"}</b> · <span className="code-light">{s.id}</span> · {s.email}</div>
+        <div className="small">
+          {s.market_cents != null ? <>TCGplayer market <b>{centsToMoney(s.market_cents)}</b> · </> : null}
+          {s.asking_cents != null ? <>Asking <b>{centsToMoney(s.asking_cents)}</b> · </> : null}
+          <a href={ebaySold(s.name, s.grade)} target="_blank" rel="noreferrer">eBay sold</a> · <a href="https://app.cardladder.com/" target="_blank" rel="noreferrer">Card Ladder</a>
+          {s.tcg_product_id ? <> · <a href={`https://www.tcgplayer.com/product/${s.tcg_product_id}`} target="_blank" rel="noreferrer">TCGplayer</a></> : null}
+        </div>
+        {s.note && <div className="small muted">Player: “{s.note}”</div>}
+        <div className="small"><span className="pill-status">{SUB_STATUS[s.status]}</span> · sent {new Date(s.created_at).toLocaleDateString()}</div>
+      </div>
+      <div className="sub-do">
+        {s.status === "accepted" ? (
+          <>
+            <label className="small">Pool<select className="input input-sm" value={tier} onChange={e => setTier(e.target.value)}>{tiers.map(t => <option key={t.id} value={t.id}>{t.name} ({centsToMoney(t.price_cents)})</option>)}</select></label>
+            <label className="small">Pool value $<input className="input input-sm num" type="number" step="0.01" min="0" value={value} onChange={e => setValue(e.target.value)} /></label>
+            <button className="btn btn-small" onClick={() => act({ action: "pay-submission", id: s.id, tier, value }, `Paid ${centsToMoney(s.offer_cents)} and added ${s.name} to the pool.`)}>Card arrived — pay {centsToMoney(s.offer_cents)}</button>
+            <button className="link-button" onClick={() => act({ action: "reject-submission", id: s.id, note: note || "Card didn’t match the photos." }, "Submission rejected.")}>Card not as described</button>
+          </>
+        ) : (
+          <>
+            <label className="small">Our value $<input className="input input-sm num" type="number" step="0.01" min="0" value={value} onChange={e => { setValue(e.target.value); setOffer((Math.floor(Math.round(Number(e.target.value) * 100) * ruleFor(Math.round(Number(e.target.value) * 100), rules) / 100) / 100).toFixed(2)); }} /></label>
+            <label className="small">Offer $<input className="input input-sm num" type="number" step="0.01" min="0" value={offer} onChange={e => setOffer(e.target.value)} /></label>
+            <input className="input input-sm" placeholder="Note to player (optional)" value={note} onChange={e => setNote(e.target.value)} />
+            <button className="btn btn-small" onClick={() => act({ action: "offer-submission", id: s.id, value, offer, note }, `Offer sent for ${s.name}.`)}>{s.status === "offered" ? "Update offer" : "Send offer"}</button>
+            <button className="link-button" onClick={() => act({ action: "reject-submission", id: s.id, note }, "Submission rejected.")}>Reject</button>
+          </>
+        )}
+      </div>
+    </div>
   );
 }

@@ -5,6 +5,10 @@ import { db } from "../../../lib/catalog";
 export default async function handler(req, res) {
   if (!db) return res.status(404).end();
   const { data, error } = await db.from("items").select("photo,price").eq("id", String(req.query.id)).maybeSingle();
+  if (!error && Number(data?.price) > 0 && /^https:\/\//.test(data?.photo || "")) {
+    res.setHeader("Cache-Control", "public, max-age=3600");
+    return res.redirect(302, data.photo);
+  }
   const m = !error && data?.photo && Number(data.price) > 0 && /^data:(image\/(?:jpeg|png|webp|gif));base64,(.+)$/s.exec(data.photo);
   if (!m) {
     res.setHeader("Cache-Control", "public, max-age=60");

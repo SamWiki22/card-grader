@@ -246,3 +246,42 @@
   .seg { display: grid; grid-template-columns: repeat(4, 1fr); }
   .seg-btn { flex-direction: column; gap: 5px; padding: 8px 2px; font-size: 13px; white-space: nowrap; }
 }
+
+/* Sell to the Bear */
+.tab-badge { position: absolute; top: 8px; left: calc(50% + 6px); min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--gold); color: var(--bg); font-size: 11px; font-weight: 800; display: grid; place-items: center; }
+.steps { list-style: none; counter-reset: step; margin: 0 0 18px; padding: 0; display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.steps li { counter-increment: step; position: relative; padding: 12px 12px 12px 44px; background: var(--panel); border-radius: 10px; display: flex; flex-direction: column; gap: 2px; font-size: 14px; }
+.steps li::before { content: counter(step); position: absolute; left: 12px; top: 12px; width: 22px; height: 22px; border-radius: 6px; background: var(--teal); color: var(--bg); font-weight: 800; font-size: 13px; display: grid; place-items: center; }
+.steps li span { color: var(--dim); font-size: 13px; line-height: 1.35; }
+.submit-form { display: flex; flex-direction: column; gap: 12px; padding: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; }
+.submit-form .field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 600; color: var(--dim); }
+.app .input { width: 100%; padding: 11px 12px; border-radius: 8px; border: 1px solid var(--line); background: #0b1426; color: var(--text); font: inherit; }
+.app .input:focus { outline: none; border-color: var(--teal); box-shadow: 0 0 0 3px rgba(79,195,182,.25); }
+.app textarea.input { resize: vertical; }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.photo-box { aspect-ratio: 5 / 7; border: 2px dashed rgba(232,222,205,.3); border-radius: 10px; display: grid; place-items: center; text-align: center; color: var(--dim); font-weight: 700; font-size: 14px; cursor: pointer; overflow: hidden; background: #0b1426; }
+.photo-box.has { border-style: solid; border-color: var(--teal); }
+.photo-box img { width: 100%; height: 100%; object-fit: cover; }
+.photo-box small { font-weight: 500; }
+.ship-to { margin-top: 18px; padding: 16px; border-radius: 12px; background: var(--panel); border-left: 5px solid var(--gold); }
+.ship-to h2 { font-size: 20px; margin-bottom: 8px; }
+.ship-to address { font-style: normal; font-weight: 700; line-height: 1.5; }
+.sub-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.sub-item { display: grid; grid-template-columns: 72px 1fr; gap: 12px; padding: 10px; background: var(--panel); border-radius: 10px; border-left: 4px solid var(--dim); }
+.sub-item.tone-act { border-left-color: var(--gold); }
+.sub-item.tone-done { border-left-color: var(--teal); }
+.sub-item.tone-off { opacity: .65; }
+.sub-item > img { width: 72px; aspect-ratio: 5 / 7; object-fit: cover; border-radius: 6px; background: #0b1426; }
+.sub-body { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.sub-top { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.sub-top b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sub-status { flex: none; font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: var(--dim); }
+.tone-act .sub-status { color: var(--gold); }
+.tone-done .sub-status { color: var(--teal); }
+.code { font-family: ui-monospace, Menlo, monospace; letter-spacing: .04em; color: var(--text); }
+.sub-offer { margin-top: 4px; font-size: 15px; }
+.sub-offer b { color: var(--gold); font-size: 17px; }
+.sub-actions { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-top: 8px; }
+.sub-actions .sell-btn, .sub-actions .ghost-btn { min-height: 44px; font-size: 15px; padding: 0 14px; }
+.app .tcg-results li { border-color: var(--line); }
+.app .modal .btn-ghost-dark { color: var(--text); box-shadow: inset 0 0 0 1px var(--line); background: transparent; }

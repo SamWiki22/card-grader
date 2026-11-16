@@ -44,3 +44,18 @@ export function valueBasis(row) {
   }
   return "Bearded Bear valuation";
 }
+
+// TCGplayer catalogs you can search, mapped to the store's games.
+// Dragon Ball has two: the current Fusion World game and the older Masters game.
+export const TCG_SOURCES = [
+  { id: "pokemon", game: "pokemon", categoryId: 3, label: "Pokémon" },
+  { id: "mtg", game: "mtg", categoryId: 1, label: "Magic: The Gathering" },
+  { id: "dbs-fw", game: "dbs", categoryId: 80, label: "Dragon Ball Fusion World" },
+  { id: "dbs-masters", game: "dbs", categoryId: 27, label: "Dragon Ball Super Masters" },
+  { id: "onepiece", game: "onepiece", categoryId: 68, label: "One Piece" },
+  { id: "gundam", game: "gundam", categoryId: 86, label: "Gundam" },
+  { id: "unionarena", game: "unionarena", categoryId: 81, label: "Union Arena" },
+];
+
+// Condition / grade suggestions for card submissions.
+export const GRADE_OPTIONS = ["Raw NM", "Raw LP", "Raw MP", "Raw HP", "PSA 10", "PSA 9", "PSA 8", "BGS 10", "BGS 9.5", "CGC 10", "CGC 9.5", "TAG 10"];

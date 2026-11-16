@@ -84,3 +84,16 @@
 .buyback-table li b { color: var(--gold, #e0b04a); }
 @media (max-width: 860px) { .tcg-controls { grid-template-columns: 1fr; } }
 .comp-row { display: grid; grid-template-columns: 1fr 1.3fr 1.4fr; gap: 8px; }
+.research a { color: var(--teal-dark); text-decoration: underline; }
+.sub-card { display: grid; grid-template-columns: auto 1fr 260px; gap: 16px; align-items: start; background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; margin-bottom: 10px; }
+.sub-photos { display: flex; gap: 6px; }
+.sub-photos img { width: 74px; aspect-ratio: 5 / 7; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); }
+.sub-details { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.sub-details a { color: var(--teal-dark); text-decoration: underline; }
+.sub-do { display: flex; flex-direction: column; gap: 6px; }
+.sub-do label { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.pill-status { padding: 2px 8px; border-radius: 999px; background: #efe7dc; color: var(--brown-dark); font-weight: 700; }
+.code-light { font-family: ui-monospace, Menlo, monospace; }
+.closed-subs { margin-top: 6px; font-size: 14px; }
+.closed-subs summary { cursor: pointer; color: var(--muted); }
+@media (max-width: 860px) { .sub-card { grid-template-columns: 1fr; } }

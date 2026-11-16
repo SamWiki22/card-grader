@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import Modal from "./Modal";
-import { centsToMoney } from "../lib/shared";
+import { centsToMoney, TCG_SOURCES } from "../lib/shared";
 
 // Find a card on TCGplayer: pick catalog (game) → set → search → printing.
 // Calls onPick({ categoryId, groupId, productId, subType, name, setName, number, imageUrl, cents, autoPrice }).
-export default function TcgPicker({ sources, initialGame, onPick, onClose, title = "Find on TCGplayer" }) {
+export default function TcgPicker({ sources = TCG_SOURCES, initialGame, onPick, onClose, title = "Find on TCGplayer", showSync = true }) {
   const [game, setGame] = useState((sources.find(s => s.game === initialGame) || sources[0]).id);
   const [sets, setSets] = useState([]);
   const [setFilter, setSetFilter] = useState("");
@@ -17,7 +17,7 @@ export default function TcgPicker({ sources, initialGame, onPick, onClose, title
 
   useEffect(() => {
     setSets([]); setGroup(""); setCards(null); setError("");
-    fetch(`/api/admin/tcg?source=${game}`).then(r => r.json()).then(d => d.error ? setError(d.error) : setSets(d.sets)).catch(() => setError("Couldn’t load sets."));
+    fetch(`/api/tcg?source=${game}`).then(r => r.json()).then(d => d.error ? setError(d.error) : setSets(d.sets)).catch(() => setError("Couldn’t load sets."));
   }, [game]);
 
   const shownSets = useMemo(() => {
@@ -30,7 +30,7 @@ export default function TcgPicker({ sources, initialGame, onPick, onClose, title
     if (!group) return setError("Pick a set first.");
     setBusy(true); setError("");
     try {
-      const r = await fetch(`/api/admin/tcg?source=${game}&group=${group}&q=${encodeURIComponent(q)}`);
+      const r = await fetch(`/api/tcg?source=${game}&group=${group}&q=${encodeURIComponent(q)}`);
       const d = await r.json();
       if (!r.ok) throw new Error(d.error);
       setCards(d.cards);
@@ -57,7 +57,7 @@ export default function TcgPicker({ sources, initialGame, onPick, onClose, title
           <button className="btn btn-small" disabled={busy || !group}>{busy ? "…" : "Search"}</button>
         </form>
       </div>
-      <label className="check"><input type="checkbox" checked={autoPrice} onChange={e => setAutoPrice(e.target.checked)} /><span>Keep this card’s price synced to TCGplayer market (updates daily)</span></label>
+      {showSync && <label className="check"><input type="checkbox" checked={autoPrice} onChange={e => setAutoPrice(e.target.checked)} /><span>Keep this card’s price synced to TCGplayer market (updates daily)</span></label>}
       {error && <p className="error">{error}</p>}
       {cards && !cards.length && <p className="muted">No cards found in this set.</p>}
       {cards?.length > 0 && (
