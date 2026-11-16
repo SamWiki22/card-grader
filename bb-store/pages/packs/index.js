@@ -12,6 +12,14 @@ import { packsOverview, BUYBACK_PERCENT } from "../../lib/packs";
 
 const wait = ms => new Promise(r => setTimeout(r, ms));
 const pct = c => (c >= 0.1 ? `${Math.round(c * 100)}%` : `${(c * 100).toFixed(1)}%`);
+// Ladder rungs, cheapest (0) to chase (4).
+const RUNG = [
+  { name: "Base", color: "#8fa3bf" },
+  { name: "Solid", color: "#4fc3b6" },
+  { name: "Hit", color: "#e0b04a" },
+  { name: "Big hit", color: "#d9853b" },
+  { name: "Chase", color: "#e0605a" },
+];
 const money0 = c => (c % 100 === 0 ? `$${(c / 100).toLocaleString("en-US")}` : centsToMoney(c));
 
 export default function Packs({ tiers, ready, buybackPercent }) {
@@ -92,7 +100,6 @@ export default function Packs({ tiers, ready, buybackPercent }) {
     );
   }
 
-  const gameColor = GAME_COLOR[tier.game] || GAME_COLOR.other;
   const top = tier.showcase[0];
   let cta;
   if (!me.user) cta = `Sign in to open — ${money0(tier.price_cents)}`;
@@ -109,11 +116,11 @@ export default function Packs({ tiers, ready, buybackPercent }) {
           <button className="add-link" onClick={() => setModal(me.user ? "funds" : "signin")}>+ Add funds</button>
         </div>
         <button className="buy-btn" onClick={open} disabled={!!opening || (me.user && !tier.poolSize) || me.loading}>
-          <span className="buy-btn-icon" style={{ background: gameColor }}><img src="/logo.png" alt="" /></span>
+          <img className="buy-btn-logo" src="/logo.png" alt="" />
           <span>{cta}</span>
         </button>
         {error && <p className="buy-error">{error}</p>}
-        <p className="buy-fine">18+ · Randomized · <span style={{ color: gameColor }}>{GAME_LABEL[tier.game]} cards only</span> · Odds above</p>
+        <p className="buy-fine">18+ · One random card per pack · Sell back at {buybackPercent}%</p>
       </div>
     </div>
   );
@@ -122,36 +129,34 @@ export default function Packs({ tiers, ready, buybackPercent }) {
     <AppShell title="Packs" bar={bar}>
       {funded && <p className="app-banner">Payment received! Your balance updates in a few seconds.</p>}
 
-      <div className="game-chips">
+      <div className="seg" role="group" aria-label="Game">
         {games.map(g => (
-          <button key={g.id} className={`game-chip${g.id === game ? " on" : ""}`} style={{ "--g": GAME_COLOR[g.id] }} onClick={() => pickGame(g.id)} aria-pressed={g.id === game}>
-            <span className="game-dot" />{g.label}
+          <button key={g.id} className={`seg-btn${g.id === game ? " on" : ""}`} style={{ "--g": GAME_COLOR[g.id] }} onClick={() => pickGame(g.id)} aria-pressed={g.id === game}>
+            <span className="seg-swatch" />{g.label}
           </button>
         ))}
       </div>
 
-      <div className="tiers">
+      <div className="tiers" role="group" aria-label="Pack tier">
         {gameTiers.map(t => (
-          <button key={t.id} className={`tier-btn${t.id === tier.id ? " on" : ""}`} style={{ "--tier": t.color }} onClick={() => { setTierId(t.id); setError(""); }} aria-pressed={t.id === tier.id}>
-            <span className="tier-btn-name">{t.name}</span>
-            <span className="tier-btn-price">{money0(t.price_cents)}</span>
+          <button key={t.id} className={`tier-tab${t.id === tier.id ? " on" : ""}`} style={{ "--tier": t.color }} onClick={() => { setTierId(t.id); setError(""); }} aria-pressed={t.id === tier.id}>
+            <span className="tier-tab-name">{t.name}</span>
+            <span className="tier-tab-price">{money0(t.price_cents)}</span>
           </button>
         ))}
       </div>
-
-      <div className="stage-label"><span className="game-pill" style={{ background: gameColor }}>{GAME_LABEL[tier.game]}</span></div>
 
       <div className="stage">
-        {top && <CardImage card={top} className="stage-peek" />}
         <PackArt tier={tier} gameLabel={GAME_LABEL[tier.game]} />
+        {top && <CardImage card={top} className="stage-peek" />}
       </div>
 
       {top ? (
         <div className="top-card">
-          <p className="caps wide">Top card in this pack</p>
+          <p className="kicker">Best card in the {tier.name} pool</p>
           <h1>{top.name}</h1>
           <div className="top-meta">
-            {top.grade && <span className="grade-pill">{top.grade}</span>}
+            {top.grade && <span className="slab-label">{top.grade}</span>}
             <span className="top-value">{money0(top.market_value_cents)}</span>
           </div>
         </div>
@@ -160,8 +165,8 @@ export default function Packs({ tiers, ready, buybackPercent }) {
       {tier.showcase.length > 0 && (
         <section className="in-pack">
           <div className="section-row">
-            <h2>In this pack right now</h2>
-            <a href="#odds" className="outline-pill">See the odds</a>
+            <h2>What’s in the pool</h2>
+            <a href="#odds" className="text-link">Odds ↓</a>
           </div>
           <div className="in-pack-scroll">
             {tier.showcase.map(c => (
@@ -172,29 +177,30 @@ export default function Packs({ tiers, ready, buybackPercent }) {
               </div>
             ))}
           </div>
-          <p className="dim small">Real cards in this pack right now. Which one you pull is random — the odds are below.</p>
+          <p className="dim small">{tier.poolSize} real cards are sitting in this pool. Every pack pulls one of them at random.</p>
         </section>
       )}
 
       {tier.odds.length > 0 && (
-        <section className="odds-panel" id="odds">
-          <div className="odds-title">
-            <h2><span style={{ color: gameColor }}>{GAME_LABEL[tier.game]}</span> odds</h2>
-            <span className="live-pill"><i /> Live</span>
+        <section className="ladder" id="odds">
+          <div className="ladder-head">
+            <h2>The {tier.name} ladder</h2>
+            <span className="updated"><i /> Updates live</span>
           </div>
-          <div className="odds-head"><span className="caps">Card value</span><span className="caps">Odds</span></div>
-          {tier.odds.map((b, i) => (
-            <div key={i} className="odds-line">
-              <span className="odds-range">{b.minCents === b.maxCents ? money0(b.minCents) : `${money0(b.minCents)}–${money0(b.maxCents)}`}</span>
-              <span className="odds-track"><span style={{ width: `${Math.max(3, b.chance * 100)}%` }} /></span>
-              <span className="odds-pct">{pct(b.chance)}</span>
-            </div>
-          ))}
-          <p className="dim small odds-note">Read from current pool inventory. Sell back any pull for {buybackPercent}% of market value.</p>
-          <Link href="/packs/rules" className="outline-pill">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" /></svg>
-            Full odds &amp; rules
-          </Link>
+          <div className="ladder-bar" aria-hidden="true">
+            {tier.odds.map(b => <span key={b.band} style={{ flexGrow: Math.max(b.chance, 0.015), background: RUNG[b.band].color }} />)}
+          </div>
+          <ol className="rungs">
+            {[...tier.odds].reverse().map(b => (
+              <li key={b.band} className="rung" style={{ "--c": RUNG[b.band].color }}>
+                <span className="rung-name">{RUNG[b.band].name}</span>
+                <span className="rung-range">{b.minCents === b.maxCents ? money0(b.minCents) : `${money0(b.minCents)} – ${money0(b.maxCents)}`}</span>
+                <span className="rung-pct">{pct(b.chance)}</span>
+              </li>
+            ))}
+          </ol>
+          <p className="dim small ladder-note">Chances come straight from the cards in the pool right now and shift as cards are pulled or sold back.</p>
+          <Link href="/packs/rules" className="text-link">How odds work →</Link>
         </section>
       )}
 
@@ -227,7 +233,7 @@ function Reveal({ opening, tier, busy, onSell, onKeep, onAgain, canAgain }) {
       <CardImage card={card} className="reveal-card" />
       <h2>{card.name}</h2>
       {card.set_name && <p className="dim">{card.set_name}</p>}
-      <div className="top-meta">{card.grade && <span className="grade-pill">{card.grade}</span>}<span className="top-value">{centsToMoney(card.market_value_cents)}</span></div>
+      <div className="top-meta">{card.grade && <span className="slab-label">{card.grade}</span>}<span className="top-value">{centsToMoney(card.market_value_cents)}</span></div>
       {opening.stage === "sold" ? (
         <>
           <p className="app-banner">Sold back for {centsToMoney(opening.sold)} — added to your balance.</p>

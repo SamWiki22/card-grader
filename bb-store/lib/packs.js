@@ -15,9 +15,10 @@ export function oddsFor(cards, priceCents) {
   if (!total) return [];
   const bands = BAND_EDGES.slice(0, -1).map((lo, i) => ({ lo: lo * priceCents, hi: BAND_EDGES[i + 1] * priceCents, cards: [] }));
   for (const c of cards) bands.find(b => c.market_value_cents >= b.lo && c.market_value_cents < b.hi).cards.push(c);
-  return bands.filter(b => b.cards.length).map(b => {
+  return bands.map((b, band) => ({ ...b, band })).filter(b => b.cards.length).map(b => {
     const values = b.cards.map(c => c.market_value_cents);
     return {
+      band: b.band,                    // 0 = cheapest range … 4 = chase range
       minCents: Math.min(...values),
       maxCents: Math.max(...values),
       count: b.cards.length,

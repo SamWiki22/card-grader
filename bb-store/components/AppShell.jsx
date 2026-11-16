@@ -18,7 +18,7 @@ export default function AppShell({ title, children, bar }) {
     <div className="app">
       <Head>
         <title>{title ? `${title} · Bearded Bear Packs` : "Bearded Bear Packs"}</title>
-        <meta name="theme-color" content="#0e0b18" />
+        <meta name="theme-color" content="#0b1426" />
         <meta name="description" content="Open Bearded Bear digital packs and pull real graded cards — keep them, ship them, or sell them back instantly." />
       </Head>
       <div className="app-glow" aria-hidden="true" />

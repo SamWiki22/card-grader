@@ -9,7 +9,7 @@ export const GAMES = [
   { id: "other", label: "Other" },
 ];
 // Accent color per game in the Packs app.
-export const GAME_COLOR = { pokemon: "#8b6cff", onepiece: "#e0605a", mtg: "#e8933a", dbs: "#f2b632", gundam: "#5aa0e0", unionarena: "#4fc3b6", other: "#9aa3b8" };
+export const GAME_COLOR = { pokemon: "#e0b04a", onepiece: "#e0605a", mtg: "#e8933a", dbs: "#f2b632", gundam: "#5aa0e0", unionarena: "#4fc3b6", other: "#9aa3b8" };
 export const GAME_LABEL = Object.fromEntries(GAMES.map(g => [g.id, g.label]));
 
 // Shop categories → inventory "type" values.
