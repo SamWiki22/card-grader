@@ -28,6 +28,13 @@ export default async function handler(req, res) {
     || event.type === "checkout.session.async_payment_succeeded";
   if (!paid) return res.json({ received: true });
 
+  // Pack credit top-up: credit the shopper's balance once per Stripe session.
+  if (session.metadata?.kind === "topup") {
+    const { error } = await db.rpc("credit_deposit", { p_user: session.metadata.user_id, p_amount: session.amount_total, p_ref: session.id });
+    if (error) { console.error(error); return res.status(500).json({ error: "Failed to credit balance" }); }
+    return res.json({ received: true });
+  }
+
   try {
     const { data: lines } = await stripe.checkout.sessions.listLineItems(session.id, { limit: 100, expand: ["data.price.product"] });
     const buyer = session.customer_details?.name || session.customer_details?.email || "customer";

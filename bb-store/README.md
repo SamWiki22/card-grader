@@ -34,6 +34,36 @@ BB Inventory's sales history as "Website (buyer name)". Stock is re-checked when
 starts, but two people could still pay for the last copy at the same moment, so check
 stock before you ship and refund if needed.
 
+## Bearded Bear Packs (virtual packs)
+Players add funds, open a digital pack, and get one **real card** from that pack's pool.
+The card goes to their **Vault**. From there they can keep it, ship it home, or **sell it back**
+for `BUYBACK_PERCENT` (default 90%) of market value as balance. A sold-back card goes back into its pool.
+
+Pages: `/packs` (open) · `/vault` (cards, sell back, ship, activity) · `/packs/rules` · `/admin/packs`.
+
+### Setup
+1. Supabase → SQL Editor → run `supabase/packs.sql` (safe to re-run). It creates the pack tables
+   (locked to the public key) and five starter tiers each for Pokémon and One Piece.
+2. Supabase → Authentication → Email Templates → **Magic Link**: add `{{ .Token }}` to the email
+   body so players get a 6-digit sign-in code.
+3. Env vars: `SUPABASE_SERVICE_ROLE_KEY` (required), `ADMIN_EMAILS`, `BUYBACK_PERCENT`,
+   `VAULT_SHIP_FEE_CENTS`, plus the Stripe keys. Adding funds goes through the same Stripe webhook.
+4. Sign in with an admin email, go to `/admin/packs`, and stock each tier's pool (photo, grade, market value).
+
+### Stocking a pool so it makes money
+Each card's chance = its weight ÷ the total weight of its pool (weight 1 = normal).
+The admin page shows each tier's **average pull value** and **house margin**. Keep the margin
+positive (roughly 10–25%) by stocking mostly cards worth a bit under the pack price, with a few
+hits. Lower a chase card's weight to make it rarer. The margin moves every time a card is pulled
+or sold back, so check it often.
+
+### Before you take real money
+- **Legal:** paid random packs with cash-value prizes and buyback can count as gambling or a
+  lottery in some states. Talk to a lawyer about age limits, state restrictions and whether you
+  need a free way to enter.
+- **Payments:** check that your payment processor allows mystery or random packs. Many restrict them.
+- Balance is store credit only. There's no cash withdrawal.
+
 ## Local dev
 ```
 cp .env.example .env.local   # fill in values

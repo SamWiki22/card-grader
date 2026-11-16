@@ -22,6 +22,11 @@ export const CONDITION_LABEL = {
   NM: "Near Mint", LP: "Lightly Played", MP: "Moderately Played", HP: "Heavily Played", DMG: "Damaged",
 };
 
+// Pack credit top-up amounts, in dollars.
+export const TOPUP_AMOUNTS = [10, 25, 50, 100];
+
+export const centsToMoney = c => money((Number(c) || 0) / 100);
+
 export function money(n) {
   return (Number(n) || 0).toLocaleString("en-US", { style: "currency", currency: "USD" });
 }
