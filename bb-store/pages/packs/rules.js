@@ -1,9 +1,9 @@
 import Link from "next/link";
 import AppShell from "../../components/AppShell";
-import { BUYBACK_PERCENT, SHIP_FEE_CENTS } from "../../lib/packs";
+import { getBuybackRules, SHIP_FEE_CENTS } from "../../lib/packs";
 import { centsToMoney } from "../../lib/shared";
 
-export default function Rules({ buyback, shipFee, contactEmail }) {
+export default function Rules({ rules, shipFee, contactEmail }) {
   return (
     <AppShell title="Odds & rules">
       <section className="app-prose">
@@ -21,7 +21,15 @@ export default function Rules({ buyback, shipFee, contactEmail }) {
         <p>Each pull is drawn on our server using a cryptographically secure random number, and every pull is logged with that number.</p>
 
         <h2>Selling back</h2>
-        <p>Any card in your vault can be sold back at any time for <b>{buyback}% of its listed market value</b>, credited to your balance immediately. We set market values from recent sales and update them over time.</p>
+        <p>Any card in your vault can be sold back at any time and the credit lands in your balance right away. The higher a card’s market value, the bigger the share you get back:</p>
+        <ul className="app-list buyback-table">
+          {rules.map((r, i) => {
+            const next = rules[i + 1];
+            const range = next ? `${centsToMoney(r.min_value_cents)} – ${centsToMoney(next.min_value_cents - 1)}` : `${centsToMoney(r.min_value_cents)} and up`;
+            return <li key={r.min_value_cents}><span>{range}</span><b>{r.percent}%</b></li>;
+          })}
+        </ul>
+        <p>Market values follow TCGplayer market prices for most cards and update daily. Some graded or rare cards are priced by hand and may have their own buyback rate, shown before you sell.</p>
 
         <h2>Shipping</h2>
         <p>Select cards in your vault and request shipping to a US address. {shipFee ? `Shipping is ${centsToMoney(shipFee)} per request.` : "Shipping is free."} Shipped cards are the exact cards shown in your vault.</p>
@@ -40,5 +48,7 @@ export default function Rules({ buyback, shipFee, contactEmail }) {
 }
 
 export async function getStaticProps() {
-  return { props: { buyback: BUYBACK_PERCENT, shipFee: SHIP_FEE_CENTS, contactEmail: process.env.CONTACT_EMAIL || "" }, revalidate: 3600 };
+  let rules = [{ min_value_cents: 0, percent: 75 }];
+  try { rules = await getBuybackRules(); } catch (e) { console.error(e); }
+  return { props: { rules, shipFee: SHIP_FEE_CENTS, contactEmail: process.env.CONTACT_EMAIL || "" }, revalidate: 600 };
 }

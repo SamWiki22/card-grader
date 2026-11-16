@@ -61,3 +61,25 @@
 .sub-title { font-size: 24px; color: var(--navy); margin: 36px 0 12px; }
 .pos { color: var(--teal-dark); font-variant-numeric: tabular-nums; }
 .neg { color: var(--danger); font-variant-numeric: tabular-nums; }
+
+/* Admin: buyback rates, TCGplayer linking */
+.admin-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.admin-head .page-title { margin-bottom: 0; }
+.rules-grid { display: flex; flex-direction: column; gap: 8px; background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; }
+.rule-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.money-input { display: inline-flex; align-items: center; gap: 4px; }
+.rules-actions { display: flex; gap: 8px; margin: 10px 0 6px; }
+.add-card-box { background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; margin-bottom: 12px; }
+.add-card-top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.add-card { grid-template-columns: 2fr 1.5fr 1fr .8fr .9fr .7fr auto auto; margin-bottom: 0; }
+.tag-sync { color: var(--teal-dark); font-weight: 700; }
+.tcg-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+.tcg-search { display: flex; gap: 8px; }
+.tcg-results { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; max-height: 55vh; overflow-y: auto; }
+.tcg-results li { display: grid; grid-template-columns: 64px 1fr; gap: 12px; align-items: center; padding: 8px; border: 1px solid var(--line); border-radius: 10px; }
+.tcg-results img { width: 64px; border-radius: 4px; }
+.tcg-info { display: flex; flex-direction: column; gap: 2px; }
+.tcg-prices { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.buyback-table { margin: 10px 0 12px; }
+.buyback-table li b { color: var(--gold, #e0b04a); }
+@media (max-width: 860px) { .tcg-controls { grid-template-columns: 1fr; } }

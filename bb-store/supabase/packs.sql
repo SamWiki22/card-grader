@@ -231,3 +231,78 @@ insert into pack_tiers (id, game, name, price_cents, color, sort) values
   ('onepiece-polar',   'onepiece', 'Polar',   5000,  '#4fc3b6', 4),
   ('onepiece-alpha',   'onepiece', 'Alpha',   10000, '#c0457a', 5)
 on conflict (id) do nothing;
+
+-- ── v2: value-based buyback + TCGplayer price links ──────────────────────
+
+-- Buyback schedule: a card worth at least min_value_cents sells back for
+-- `percent` of market value (the highest matching row wins). Edit in /admin/packs.
+create table if not exists buyback_rules (
+  min_value_cents bigint primary key check (min_value_cents >= 0),
+  percent integer not null check (percent between 0 and 100)
+);
+alter table buyback_rules enable row level security;
+insert into buyback_rules (min_value_cents, percent) values
+  (0, 75), (2000, 85), (10000, 90), (50000, 95)
+on conflict (min_value_cents) do nothing;
+
+-- Per-card overrides and TCGplayer links (pack cards).
+alter table pack_cards add column if not exists buyback_percent integer check (buyback_percent between 0 and 100);
+alter table pack_cards add column if not exists tcg_category_id integer;
+alter table pack_cards add column if not exists tcg_group_id integer;
+alter table pack_cards add column if not exists tcg_product_id integer;
+alter table pack_cards add column if not exists tcg_subtype text;
+alter table pack_cards add column if not exists price_source text not null default 'manual';  -- manual | tcgplayer
+alter table pack_cards add column if not exists price_updated_at timestamptz;
+
+-- Same links on the store's inventory items (BB Inventory ignores these columns).
+alter table if exists items add column if not exists tcg_category_id integer;
+alter table if exists items add column if not exists tcg_group_id integer;
+alter table if exists items add column if not exists tcg_product_id integer;
+alter table if exists items add column if not exists tcg_subtype text;
+alter table if exists items add column if not exists price_source text not null default 'manual';
+alter table if exists items add column if not exists price_updated_at timestamptz;
+
+create or replace function buyback_percent_for(p_value bigint, p_override integer)
+returns integer language sql stable as $$
+  select coalesce(p_override,
+    (select percent from buyback_rules where min_value_cents <= p_value order by min_value_cents desc limit 1),
+    75);
+$$;
+
+-- Replace all buyback rules at once (from the admin page).
+create or replace function set_buyback_rules(p_rules jsonb)
+returns void language plpgsql as $$
+begin
+  if not exists (select 1 from jsonb_array_elements(p_rules) r where (r->>'min_value_cents')::bigint = 0) then
+    raise exception 'NEED_ZERO_RULE';
+  end if;
+  delete from buyback_rules where true;
+  insert into buyback_rules (min_value_cents, percent)
+    select (r->>'min_value_cents')::bigint, (r->>'percent')::integer from jsonb_array_elements(p_rules) r;
+end $$;
+
+-- Sell-back now works out the percentage itself from the card's value.
+drop function if exists sell_back(uuid, text, integer);
+create or replace function sell_back(p_user uuid, p_card text)
+returns jsonb language plpgsql as $$
+declare
+  card pack_cards;
+  pct integer;
+  amount bigint;
+  bal bigint;
+begin
+  select * into card from pack_cards where id = p_card and owner_id = p_user and status = 'held' for update;
+  if not found then raise exception 'NOT_YOURS'; end if;
+  pct := buyback_percent_for(card.market_value_cents, card.buyback_percent);
+  amount := floor(card.market_value_cents * pct / 100.0);
+  update pack_cards set status = 'available', owner_id = null, held_at = null, updated_at = now() where id = p_card;
+  update profiles set balance_cents = balance_cents + amount where user_id = p_user returning balance_cents into bal;
+  insert into ledger (user_id, kind, amount_cents, note, ref)
+    values (p_user, 'buyback', amount, 'Sold back (' || pct || '%): ' || card.name, card.id);
+  return jsonb_build_object('amount_cents', amount, 'percent', pct, 'balance_cents', bal);
+end $$;
+
+revoke all on function sell_back(uuid, text) from public, anon, authenticated;
+revoke all on function set_buyback_rules(jsonb) from public, anon, authenticated;
+grant execute on function sell_back(uuid, text) to service_role;
+grant execute on function set_buyback_rules(jsonb) to service_role;

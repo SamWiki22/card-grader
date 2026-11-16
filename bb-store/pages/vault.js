@@ -102,7 +102,7 @@ export default function Vault() {
                 <div className="in-pack-name">{c.name}</div>
                 <div className="vault-row">
                   <span className="in-pack-value">{centsToMoney(c.market_value_cents)}</span>
-                  <button className="mini-pill" onClick={() => setModal({ sell: c })}>Sell {data.buyback_percent}%</button>
+                  <button className="mini-pill" onClick={() => setModal({ sell: c })}>Sell {c.buyback_percent}%</button>
                 </div>
               </div>
             );
@@ -123,7 +123,7 @@ export default function Vault() {
       {modal?.sell && (
         <Modal title="Sell this card back?" onClose={() => setModal(null)}>
           <p><b>{modal.sell.name}</b>{modal.sell.grade ? ` (${modal.sell.grade})` : ""}</p>
-          <p>Market value {centsToMoney(modal.sell.market_value_cents)} → you get <b>{centsToMoney(Math.floor(modal.sell.market_value_cents * data.buyback_percent / 100))}</b> ({data.buyback_percent}%) added to your balance right away.</p>
+          <p>Market value {centsToMoney(modal.sell.market_value_cents)} → you get <b>{centsToMoney(modal.sell.buyback_cents)}</b> ({modal.sell.buyback_percent}%) added to your balance right away.</p>
           <button className="btn btn-block" disabled={busy} onClick={() => sell(modal.sell)}>{busy ? "Selling…" : "Sell back"}</button>
         </Modal>
       )}

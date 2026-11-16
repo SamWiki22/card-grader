@@ -46,7 +46,7 @@ and logins, the same project BB Inventory already uses), **Vercel** (hosting), a
    | `SUPABASE_ANON_KEY` | anon public key |
    | `SUPABASE_SERVICE_ROLE_KEY` | service_role key |
    | `ADMIN_EMAILS` | your email (comma-separate several) |
-   | `BUYBACK_PERCENT` | `90` |
+   | `CRON_SECRET` | any long random string (protects the daily TCGplayer price sync) |
    | `VAULT_SHIP_FEE_CENTS` | `500` (= $5 to ship vault cards) |
    | `SHIPPING_FLAT_CENTS` | `500` (store orders) |
    | `FREE_SHIPPING_MIN` | `75` |
@@ -68,6 +68,12 @@ and logins, the same project BB Inventory already uses), **Vercel** (hosting), a
 4. Watch **House margin** in the tiers table and keep it positive (aim for 10–25%). Mostly stock
    cards worth a bit less than the pack price, plus a few hits.
 5. Untick **Live** on tiers you aren't ready to sell, then click **Save**.
+6. **Buyback rates** (same page): set what players get back by card value. The defaults are 75% under $20,
+   85% from $20, 90% from $100 and 95% from $500. Type a % in a card's **Buyback** box to override it for that card.
+7. **TCGplayer prices:** click **Find on TCGplayer** when adding a card. Pick the set, search the name and click
+   the printing (Holofoil, Reverse Holo…). Leave "keep synced" ticked and the value updates daily. Use
+   **Link** in the **Store singles** table to do the same for singles from BB Inventory.
+   Graded slabs: TCGplayer prices raw cards, so enter slab values by hand (don't sync them).
 
 ## Step 6 — Your own domain (optional)
 1. In Vercel, open the project, go to **Settings → Domains**, and add e.g. `beardedbeartcg.com`.

@@ -8,7 +8,7 @@ import AddFunds from "../../components/AddFunds";
 import { useMe, postJSON } from "../../lib/me";
 import { GAMES, GAME_LABEL, GAME_COLOR, centsToMoney } from "../../lib/shared";
 import { packsReady } from "../../lib/auth";
-import { packsOverview, BUYBACK_PERCENT } from "../../lib/packs";
+import { packsOverview, getBuybackRules } from "../../lib/packs";
 
 const wait = ms => new Promise(r => setTimeout(r, ms));
 const pct = c => (c >= 0.1 ? `${Math.round(c * 100)}%` : `${(c * 100).toFixed(1)}%`);
@@ -120,7 +120,7 @@ export default function Packs({ tiers, ready, buybackPercent }) {
           <span>{cta}</span>
         </button>
         {error && <p className="buy-error">{error}</p>}
-        <p className="buy-fine">18+ · One random card per pack · Sell back at {buybackPercent}%</p>
+        <p className="buy-fine">18+ · One random card per pack · Sell back for up to {buybackPercent}%</p>
       </div>
     </div>
   );
@@ -255,8 +255,8 @@ function Reveal({ opening, tier, busy, onSell, onKeep, onAgain, canAgain }) {
 
 export async function getServerSideProps({ res }) {
   res.setHeader("Cache-Control", "no-store");
-  if (!packsReady()) return { props: { tiers: [], ready: false, buybackPercent: BUYBACK_PERCENT } };
-  let tiers = [];
-  try { tiers = await packsOverview(); } catch (e) { console.error(e); }
-  return { props: { tiers, ready: true, buybackPercent: BUYBACK_PERCENT } };
+  if (!packsReady()) return { props: { tiers: [], ready: false, buybackPercent: 0 } };
+  let tiers = [], rules = [];
+  try { [tiers, rules] = await Promise.all([packsOverview(), getBuybackRules()]); } catch (e) { console.error(e); }
+  return { props: { tiers, ready: true, buybackPercent: Math.max(0, ...rules.map(r => r.percent)) } };
 }

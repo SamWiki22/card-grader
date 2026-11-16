@@ -1,11 +1,15 @@
 import { randomBytes } from "crypto";
 import { requireAdmin } from "../../../lib/auth";
 import { db } from "../../../lib/catalog";
-import { listTiers, oddsFor, expectedValue } from "../../../lib/packs";
+import { listTiers, oddsFor, expectedValue, getBuybackRules } from "../../../lib/packs";
+import { TCG_CATEGORY, marketCents } from "../../../lib/tcg";
+import { refreshPrices } from "../../../lib/prices";
 
 export const config = { api: { bodyParser: { sizeLimit: "4mb" } } };
 
 const cents = v => Math.round(Number(v) * 100);
+const intOrNull = v => (v === "" || v == null ? null : Math.max(0, Math.min(100, Math.round(Number(v)))));
+const TCG_COLS = "tcg_category_id,tcg_group_id,tcg_product_id,tcg_subtype,price_source,price_updated_at";
 
 // GET: tiers with pool stats, every card, open shipments.
 // POST { action, ... }: tier / card / shipment changes.
@@ -15,10 +19,12 @@ export default async function handler(req, res) {
   if (!admin) return;
 
   if (req.method === "GET") {
-    const [tiers, cards, ships] = await Promise.all([
+    const [tiers, cards, ships, rules, items] = await Promise.all([
       listTiers({ includeInactive: true }),
-      db.from("pack_cards").select("id,tier_id,name,set_name,grade,market_value_cents,weight,status,owner_id,created_at").order("created_at", { ascending: false }),
+      db.from("pack_cards").select(`id,tier_id,name,set_name,grade,market_value_cents,weight,buyback_percent,status,owner_id,created_at,${TCG_COLS}`).order("created_at", { ascending: false }),
       db.from("shipments").select("*").order("created_at", { ascending: false }).limit(100),
+      getBuybackRules(),
+      db.from("items").select(`id,name,set_name,game,condition,quantity,price,${TCG_COLS}`).eq("type", "single").order("name"),
     ]);
     const all = cards.data || [];
     const stats = tiers.map(t => {
@@ -28,7 +34,7 @@ export default async function handler(req, res) {
     });
     const names = Object.fromEntries(all.map(c => [c.id, `${c.name}${c.grade ? ` (${c.grade})` : ""}`]));
     const shipments = (ships.data || []).map(s => ({ ...s, cards: s.card_ids.map(id => names[id] || id) }));
-    return res.json({ tiers: stats, cards: all, shipments });
+    return res.json({ tiers: stats, cards: all, shipments, rules, items: items.data || [], tcgGames: Object.keys(TCG_CATEGORY) });
   }
 
   if (req.method !== "POST") return res.status(405).end();
@@ -55,6 +61,8 @@ export default async function handler(req, res) {
         market_value_cents: cents(b.value),
         weight: Number(b.weight) > 0 ? Number(b.weight) : 1,
         image: b.image ? String(b.image) : null,
+        buyback_percent: intOrNull(b.buyback_percent),
+        ...tcgLink(b.tcg),
       });
       break;
     }
@@ -64,6 +72,7 @@ export default async function handler(req, res) {
       if (b.value !== undefined) patch.market_value_cents = cents(b.value);
       if (b.weight !== undefined && Number(b.weight) > 0) patch.weight = Number(b.weight);
       if (b.tier_id) patch.tier_id = String(b.tier_id);
+      if (b.buyback_percent !== undefined) patch.buyback_percent = intOrNull(b.buyback_percent);
       // Only cards sitting in a pool can be pulled out of it; vaulted cards belong to someone.
       if (b.status === "retired" || b.status === "available") patch.status = b.status;
       let q = db.from("pack_cards").update(patch).eq("id", String(b.id));
@@ -71,6 +80,44 @@ export default async function handler(req, res) {
       result = await q;
       break;
     }
+
+    case "save-buyback-rules": {
+      const rules = (Array.isArray(b.rules) ? b.rules : [])
+        .map(r => ({ min_value_cents: cents(r.min), percent: intOrNull(r.percent) }))
+        .filter(r => r.min_value_cents >= 0 && r.percent != null);
+      if (!rules.some(r => r.min_value_cents === 0)) return res.status(400).json({ error: "Keep a rule that starts at $0." });
+      if (new Set(rules.map(r => r.min_value_cents)).size !== rules.length) return res.status(400).json({ error: "Two rules start at the same value." });
+      result = await db.rpc("set_buyback_rules", { p_rules: rules });
+      break;
+    }
+
+    // Link a pack card or store single to a TCGplayer product (and optionally
+    // let its price follow TCGplayer's market price from now on).
+    case "link-tcg": {
+      const table = b.target === "item" ? "items" : "pack_cards";
+      const link = tcgLink(b.tcg);
+      if (!link.tcg_product_id) return res.status(400).json({ error: "Pick a TCGplayer card." });
+      const patch = { ...link };
+      if (link.price_source === "tcgplayer") {
+        const m = await marketCents(link.tcg_category_id, link.tcg_group_id, link.tcg_product_id, link.tcg_subtype);
+        if (m == null) return res.status(409).json({ error: "TCGplayer has no market price for that card yet." });
+        patch.price_updated_at = new Date().toISOString();
+        if (table === "items") patch.price = m / 100; else patch.market_value_cents = m;
+      }
+      if (table === "pack_cards" && b.tcg?.imageUrl) patch.image = String(b.tcg.imageUrl);
+      result = await db.from(table).update(patch).eq("id", String(b.id));
+      break;
+    }
+
+    case "unlink-tcg": {
+      const table = b.target === "item" ? "items" : "pack_cards";
+      result = await db.from(table).update({ tcg_category_id: null, tcg_group_id: null, tcg_product_id: null, tcg_subtype: null, price_source: "manual" }).eq("id", String(b.id));
+      break;
+    }
+
+    case "refresh-prices":
+      try { return res.json({ ok: true, ...(await refreshPrices()) }); }
+      catch (e) { console.error(e); return res.status(502).json({ error: e.message }); }
 
     case "mark-shipped": {
       const { data: s } = await db.from("shipments").select("card_ids").eq("id", Number(b.id)).maybeSingle();
@@ -89,4 +136,16 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: result.error.message });
   }
   res.json({ ok: true });
+}
+
+// Pull TCGplayer link fields out of a request, validated.
+function tcgLink(t) {
+  if (!t?.productId) return {};
+  return {
+    tcg_category_id: Number(t.categoryId),
+    tcg_group_id: Number(t.groupId),
+    tcg_product_id: Number(t.productId),
+    tcg_subtype: String(t.subType || "").slice(0, 40) || null,
+    price_source: t.autoPrice ? "tcgplayer" : "manual",
+  };
 }

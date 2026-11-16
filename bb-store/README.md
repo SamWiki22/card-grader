@@ -37,7 +37,12 @@ stock before you ship and refund if needed.
 ## Bearded Bear Packs (virtual packs)
 Players add funds, open a digital pack, and get one **real card** from that pack's pool.
 The card goes to their **Vault**. From there they can keep it, ship it home, or **sell it back**
-for `BUYBACK_PERCENT` (default 90%) of market value as balance. A sold-back card goes back into its pool.
+for a share of market value set by card value in `/admin/packs` (default 75% under $20, rising to 95% at $500+;
+any card can have its own %). A sold-back card goes back into its pool.
+
+Market values can be linked to TCGplayer (via tcgcsv.com's free daily mirror). Linked cards and store singles
+re-sync every day at 21:30 UTC (`vercel.json` cron → `/api/cron/refresh-prices`, protected by `CRON_SECRET`),
+or on demand with **Refresh TCGplayer prices** in admin.
 
 Pages: `/packs` (open) · `/vault` (cards, sell back, ship, activity) · `/packs/rules` · `/admin/packs`.
 
@@ -46,7 +51,7 @@ Pages: `/packs` (open) · `/vault` (cards, sell back, ship, activity) · `/packs
    (locked to the public key) and five starter tiers each for Pokémon and One Piece.
 2. Supabase → Authentication → Email Templates → **Magic Link**: add `{{ .Token }}` to the email
    body so players get a 6-digit sign-in code.
-3. Env vars: `SUPABASE_SERVICE_ROLE_KEY` (required), `ADMIN_EMAILS`, `BUYBACK_PERCENT`,
+3. Env vars: `SUPABASE_SERVICE_ROLE_KEY` (required), `ADMIN_EMAILS`, `CRON_SECRET`,
    `VAULT_SHIP_FEE_CENTS`, plus the Stripe keys. Adding funds goes through the same Stripe webhook.
 4. Sign in with an admin email, go to `/admin/packs`, and stock each tier's pool (photo, grade, market value).
 

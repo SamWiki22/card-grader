@@ -1,7 +1,23 @@
 // Server-only: pack tiers, live pools and odds.
 import { db } from "./catalog";
 
-export const BUYBACK_PERCENT = Math.min(100, Math.max(0, Number(process.env.BUYBACK_PERCENT) || 90));
+// Buyback schedule from the buyback_rules table: [{ min_value_cents, percent }], lowest first.
+export async function getBuybackRules() {
+  if (!db) return [{ min_value_cents: 0, percent: 75 }];
+  const { data, error } = await db.from("buyback_rules").select("min_value_cents,percent").order("min_value_cents");
+  if (error) throw error;
+  return data.length ? data.map(r => ({ min_value_cents: Number(r.min_value_cents), percent: r.percent })) : [{ min_value_cents: 0, percent: 75 }];
+}
+
+// Same rule as the database's buyback_percent_for(): a card's own override wins,
+// otherwise the highest rule whose minimum the card's value reaches.
+export function buybackPercent(valueCents, override, rules) {
+  if (override != null) return override;
+  let pct = rules[0]?.percent ?? 75;
+  for (const r of rules) if (valueCents >= r.min_value_cents) pct = r.percent;
+  return pct;
+}
+export const buybackCents = (valueCents, pct) => Math.floor(valueCents * pct / 100);
 export const SHIP_FEE_CENTS = Math.max(0, Number(process.env.VAULT_SHIP_FEE_CENTS) || 0);
 
 const CARD_COLUMNS = "id,tier_id,name,set_name,grade,market_value_cents,weight";

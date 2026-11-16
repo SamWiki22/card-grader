@@ -1,7 +1,7 @@
 import { randomBytes } from "crypto";
 import { requireUser, friendlyError } from "../../../lib/auth";
 import { db } from "../../../lib/catalog";
-import { getBalance, BUYBACK_PERCENT } from "../../../lib/packs";
+import { getBalance, getBuybackRules, buybackPercent, buybackCents } from "../../../lib/packs";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
@@ -18,5 +18,7 @@ export default async function handler(req, res) {
     console.error(error);
     return res.status(500).json({ error: "Something went wrong opening that pack. You weren’t charged." });
   }
-  res.json({ ...data, buyback_cents: Math.floor(data.card.market_value_cents * BUYBACK_PERCENT / 100), buyback_percent: BUYBACK_PERCENT });
+  const { data: card } = await db.from("pack_cards").select("buyback_percent").eq("id", data.card.id).maybeSingle();
+  const pct = buybackPercent(data.card.market_value_cents, card?.buyback_percent ?? null, await getBuybackRules());
+  res.json({ ...data, buyback_cents: buybackCents(data.card.market_value_cents, pct), buyback_percent: pct });
 }
