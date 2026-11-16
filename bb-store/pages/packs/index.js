@@ -6,7 +6,7 @@ import PackArt, { CardImage } from "../../components/PackArt";
 import SignIn from "../../components/SignIn";
 import AddFunds from "../../components/AddFunds";
 import { useMe, postJSON } from "../../lib/me";
-import { GAMES, GAME_LABEL, GAME_COLOR, centsToMoney } from "../../lib/shared";
+import { GAMES, GAME_LABEL, GAME_SHORT, GAME_COLOR, centsToMoney } from "../../lib/shared";
 import { packsReady } from "../../lib/auth";
 import { packsOverview, getBuybackRules } from "../../lib/packs";
 
@@ -132,7 +132,7 @@ export default function Packs({ tiers, ready, buybackPercent }) {
       <div className="seg" role="group" aria-label="Game">
         {games.map(g => (
           <button key={g.id} className={`seg-btn${g.id === game ? " on" : ""}`} style={{ "--g": GAME_COLOR[g.id] }} onClick={() => pickGame(g.id)} aria-pressed={g.id === game}>
-            <span className="seg-swatch" />{g.label}
+            <span className="seg-swatch" />{g.short}
           </button>
         ))}
       </div>
@@ -147,7 +147,7 @@ export default function Packs({ tiers, ready, buybackPercent }) {
       </div>
 
       <div className="stage">
-        <PackArt tier={tier} gameLabel={GAME_LABEL[tier.game]} />
+        <PackArt tier={tier} gameLabel={GAME_SHORT[tier.game]} />
         {top && <CardImage card={top} className="stage-peek" />}
       </div>
 
@@ -207,7 +207,7 @@ export default function Packs({ tiers, ready, buybackPercent }) {
       {opening && (
         <div className="reveal-backdrop">
           {opening.stage === "shaking" ? (
-            <div className="reveal-pack"><PackArt tier={tier} gameLabel={GAME_LABEL[tier.game]} state="opening" /><p className="dim">Ripping…</p></div>
+            <div className="reveal-pack"><PackArt tier={tier} gameLabel={GAME_SHORT[tier.game]} state="opening" /><p className="dim">Ripping…</p></div>
           ) : (
             <Reveal opening={opening} tier={tier} busy={busy} onSell={sellBack}
               onKeep={() => setOpening(null)}

@@ -83,3 +83,4 @@
 .buyback-table { margin: 10px 0 12px; }
 .buyback-table li b { color: var(--gold, #e0b04a); }
 @media (max-width: 860px) { .tcg-controls { grid-template-columns: 1fr; } }
+.comp-row { display: grid; grid-template-columns: 1fr 1.3fr 1.4fr; gap: 8px; }

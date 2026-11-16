@@ -2,14 +2,15 @@ import { randomBytes } from "crypto";
 import { requireAdmin } from "../../../lib/auth";
 import { db } from "../../../lib/catalog";
 import { listTiers, oddsFor, expectedValue, getBuybackRules } from "../../../lib/packs";
-import { TCG_CATEGORY, marketCents } from "../../../lib/tcg";
+import { TCG_SOURCES, marketCents } from "../../../lib/tcg";
+import { COMP_SOURCES } from "../../../lib/shared";
 import { refreshPrices } from "../../../lib/prices";
 
 export const config = { api: { bodyParser: { sizeLimit: "4mb" } } };
 
 const cents = v => Math.round(Number(v) * 100);
 const intOrNull = v => (v === "" || v == null ? null : Math.max(0, Math.min(100, Math.round(Number(v)))));
-const TCG_COLS = "tcg_category_id,tcg_group_id,tcg_product_id,tcg_subtype,price_source,price_updated_at";
+const TCG_COLS = "tcg_category_id,tcg_group_id,tcg_product_id,tcg_subtype,price_source,price_updated_at,comp_cents,comp_source,comp_date,comp_url";
 
 // GET: tiers with pool stats, every card, open shipments.
 // POST { action, ... }: tier / card / shipment changes.
@@ -34,7 +35,7 @@ export default async function handler(req, res) {
     });
     const names = Object.fromEntries(all.map(c => [c.id, `${c.name}${c.grade ? ` (${c.grade})` : ""}`]));
     const shipments = (ships.data || []).map(s => ({ ...s, cards: s.card_ids.map(id => names[id] || id) }));
-    return res.json({ tiers: stats, cards: all, shipments, rules, items: items.data || [], tcgGames: Object.keys(TCG_CATEGORY) });
+    return res.json({ tiers: stats, cards: all, shipments, rules, items: items.data || [], tcgSources: TCG_SOURCES.map(({ id, game, label }) => ({ id, game, label })) });
   }
 
   if (req.method !== "POST") return res.status(405).end();
@@ -99,12 +100,43 @@ export default async function handler(req, res) {
       if (!link.tcg_product_id) return res.status(400).json({ error: "Pick a TCGplayer card." });
       const patch = { ...link };
       if (link.price_source === "tcgplayer") {
-        const m = await marketCents(link.tcg_category_id, link.tcg_group_id, link.tcg_product_id, link.tcg_subtype);
-        if (m == null) return res.status(409).json({ error: "TCGplayer has no market price for that card yet." });
+        // No TCGplayer price yet? Fall back to the card's recorded last sale, if any.
+        let m = await marketCents(link.tcg_category_id, link.tcg_group_id, link.tcg_product_id, link.tcg_subtype);
+        if (m == null) {
+          const { data: row } = await db.from(table).select("comp_cents").eq("id", String(b.id)).maybeSingle();
+          m = row?.comp_cents ?? null;
+        }
+        if (m == null) return res.status(409).json({ error: "TCGplayer has no market price for that card yet. Add a last-sold price first, or link without syncing." });
         patch.price_updated_at = new Date().toISOString();
         if (table === "items") patch.price = m / 100; else patch.market_value_cents = m;
       }
       if (table === "pack_cards" && b.tcg?.imageUrl) patch.image = String(b.tcg.imageUrl);
+      result = await db.from(table).update(patch).eq("id", String(b.id));
+      break;
+    }
+
+    // Record a card's last sale (eBay, Goldin, Card Ladder…). With use=true the
+    // sale price becomes the card's value; otherwise it's kept as a backup.
+    case "save-comp": {
+      const table = b.target === "item" ? "items" : "pack_cards";
+      const comp = b.price === "" || b.price == null ? null : cents(b.price);
+      if (comp != null && !(comp >= 0)) return res.status(400).json({ error: "Enter a valid sale price." });
+      const date = /^\d{4}-\d{2}-\d{2}$/.test(String(b.date || "")) ? String(b.date) : null;
+      const url = /^https:\/\//.test(String(b.url || "")) ? String(b.url).slice(0, 500) : null;
+      const patch = {
+        comp_cents: comp,
+        comp_source: COMP_SOURCES.includes(b.source) ? b.source : null,
+        comp_date: date,
+        comp_url: url,
+      };
+      if (b.use && comp != null) {
+        patch.price_source = "comp";
+        patch.price_updated_at = new Date().toISOString();
+        if (table === "items") patch.price = comp / 100; else patch.market_value_cents = comp;
+      } else if (!b.use) {
+        const { data: row } = await db.from(table).select("price_source").eq("id", String(b.id)).maybeSingle();
+        if (row?.price_source === "comp") patch.price_source = "manual";
+      }
       result = await db.from(table).update(patch).eq("id", String(b.id));
       break;
     }

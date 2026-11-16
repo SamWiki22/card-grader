@@ -5,7 +5,7 @@ import Modal from "../components/Modal";
 import SignIn from "../components/SignIn";
 import { CardImage } from "../components/PackArt";
 import { useMe, postJSON } from "../lib/me";
-import { centsToMoney } from "../lib/shared";
+import { centsToMoney, valueBasis } from "../lib/shared";
 
 const STATUS = { ship_requested: "Shipping requested", shipped: "Shipped" };
 
@@ -124,6 +124,7 @@ export default function Vault() {
         <Modal title="Sell this card back?" onClose={() => setModal(null)}>
           <p><b>{modal.sell.name}</b>{modal.sell.grade ? ` (${modal.sell.grade})` : ""}</p>
           <p>Market value {centsToMoney(modal.sell.market_value_cents)} → you get <b>{centsToMoney(modal.sell.buyback_cents)}</b> ({modal.sell.buyback_percent}%) added to your balance right away.</p>
+          <p className="muted small">Value based on: {modal.sell.price_source === "comp" && modal.sell.comp_url ? <a href={modal.sell.comp_url} target="_blank" rel="noreferrer">{valueBasis(modal.sell)}</a> : valueBasis(modal.sell)}</p>
           <button className="btn btn-block" disabled={busy} onClick={() => sell(modal.sell)}>{busy ? "Selling…" : "Sell back"}</button>
         </Modal>
       )}

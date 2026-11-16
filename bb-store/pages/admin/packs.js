@@ -2,8 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import Layout from "../../components/Layout";
 import SignIn from "../../components/SignIn";
 import TcgPicker from "../../components/TcgPicker";
+import Modal from "../../components/Modal";
 import { useMe, postJSON } from "../../lib/me";
-import { GAME_LABEL, centsToMoney } from "../../lib/shared";
+import { GAME_LABEL, COMP_SOURCES, centsToMoney } from "../../lib/shared";
 
 const pct = n => `${(n * 100).toFixed(1)}%`;
 const STATUS = { available: "In pool", held: "In a vault", ship_requested: "To ship", shipped: "Shipped", retired: "Pulled from pool" };
@@ -39,6 +40,7 @@ export default function AdminPacks() {
   const [tierId, setTierId] = useState("");
   const [msg, setMsg] = useState("");
   const [picker, setPicker] = useState(null); // { game, onPick }
+  const [comp, setComp] = useState(null);     // { target, row }
 
   const load = useCallback(async () => {
     const r = await fetch("/api/admin/packs");
@@ -98,16 +100,17 @@ export default function AdminPacks() {
         {tier && (
           <>
             <h2 className="sub-title">{GAME_LABEL[tier.game]} · {tier.name} pool</h2>
-            <AddCard tier={tier} games={data.tcgGames} pick={pick} onAdd={b => act({ action: "add-card", tier_id: tier.id, ...b }, "Card added to pool.")} />
+            <AddCard tier={tier} pick={pick} onAdd={b => act({ action: "add-card", tier_id: tier.id, ...b }, "Card added to pool.")} />
             <div className="table-wrap">
               <table className="table">
-                <thead><tr><th>Card</th><th>Grade</th><th>Value</th><th>Buyback</th><th>Weight</th><th>Chance</th><th>TCGplayer</th><th>Status</th><th /></tr></thead>
+                <thead><tr><th>Card</th><th>Grade</th><th>Value</th><th>Buyback</th><th>Weight</th><th>Chance</th><th>TCGplayer</th><th>Last sold</th><th>Status</th><th /></tr></thead>
                 <tbody>
                   {cards.map(c => <CardRow key={c.id} c={c} rules={data.rules} total={cards.filter(x => x.status === "available").reduce((s, x) => s + Number(x.weight), 0)}
                     onSave={b => act({ action: "update-card", id: c.id, ...b }, "Card updated.")}
                     onLink={() => pick(tier.game, t => act({ action: "link-tcg", target: "pack", id: c.id, tcg: t }, `Linked to TCGplayer${t.autoPrice ? " — price now follows market" : ""}.`))}
-                    onUnlink={() => act({ action: "unlink-tcg", target: "pack", id: c.id }, "TCGplayer link removed; price is manual.")} />)}
-                  {!cards.length && <tr><td colSpan={9} className="muted">No cards in this pool yet.</td></tr>}
+                    onUnlink={() => act({ action: "unlink-tcg", target: "pack", id: c.id }, "TCGplayer link removed; price is manual.")}
+                    onComp={() => setComp({ target: "pack", row: c })} />)}
+                  {!cards.length && <tr><td colSpan={10} className="muted">No cards in this pool yet.</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -118,7 +121,7 @@ export default function AdminPacks() {
         <p className="muted small">Singles from BB Inventory. Link one to TCGplayer and tick “sync” to have its store price follow the TCGplayer market price every day.</p>
         <div className="table-wrap">
           <table className="table">
-            <thead><tr><th>Card</th><th>Cond.</th><th>Qty</th><th>Store price</th><th>TCGplayer</th><th /></tr></thead>
+            <thead><tr><th>Card</th><th>Cond.</th><th>Qty</th><th>Store price</th><th>TCGplayer</th><th>Last sold</th><th /></tr></thead>
             <tbody>
               {data.items.map(i => (
                 <tr key={i.id}>
@@ -127,13 +130,14 @@ export default function AdminPacks() {
                   <td>{i.quantity}</td>
                   <td>{centsToMoney(Math.round(Number(i.price) * 100))}</td>
                   <td><TcgStatus row={i} /></td>
+                  <td><CompCell row={i} onEdit={() => setComp({ target: "item", row: i })} /></td>
                   <td className="nowrap">
                     <button className="btn btn-small btn-ghost-dark" onClick={() => pick(i.game || "pokemon", t => act({ action: "link-tcg", target: "item", id: i.id, tcg: t }, `${i.name} linked${t.autoPrice ? " — store price now follows TCGplayer" : ""}.`))}>{i.tcg_product_id ? "Relink" : "Link"}</button>{" "}
                     {i.tcg_product_id && <button className="link-button" onClick={() => act({ action: "unlink-tcg", target: "item", id: i.id }, "Link removed.")}>Unlink</button>}
                   </td>
                 </tr>
               ))}
-              {!data.items.length && <tr><td colSpan={6} className="muted">No singles in inventory yet.</td></tr>}
+              {!data.items.length && <tr><td colSpan={7} className="muted">No singles in inventory yet.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -143,7 +147,8 @@ export default function AdminPacks() {
           <Shipment key={s.id} s={s} onShip={tracking => act({ action: "mark-shipped", id: s.id, tracking }, `Shipment #${s.id} marked shipped.`)} />
         ))}
       </section>
-      {picker && <TcgPicker games={data.tcgGames} initialGame={picker.game} onPick={picker.onPick} onClose={() => setPicker(null)} />}
+      {comp && <CompEditor {...comp} onClose={() => setComp(null)} onSave={async b => { if (await act({ action: "save-comp", target: comp.target, id: comp.row.id, ...b }, "Last sale saved.")) setComp(null); }} />}
+      {picker && <TcgPicker sources={data.tcgSources} initialGame={picker.game} onPick={picker.onPick} onClose={() => setPicker(null)} />}
     </Layout>
   );
 }
@@ -261,7 +266,7 @@ function AddCard({ tier, games, pick, onAdd }) {
   );
 }
 
-function CardRow({ c, rules, total, onSave, onLink, onUnlink }) {
+function CardRow({ c, rules, total, onSave, onLink, onUnlink, onComp }) {
   const [value, setValue] = useState((c.market_value_cents / 100).toFixed(2));
   const [weight, setWeight] = useState(String(c.weight));
   const [bb, setBb] = useState(c.buyback_percent == null ? "" : String(c.buyback_percent));
@@ -273,14 +278,15 @@ function CardRow({ c, rules, total, onSave, onLink, onUnlink }) {
     <tr className={inPool ? "" : "row-dim"}>
       <td>{c.name}<div className="muted small">{c.set_name}</div></td>
       <td>{c.grade}</td>
-      <td><input className="input input-sm num" type="number" step="0.01" value={value} onChange={e => setValue(e.target.value)} disabled={c.price_source === "tcgplayer"} title={c.price_source === "tcgplayer" ? "Synced from TCGplayer — unlink to edit by hand" : ""} /></td>
+      <td><input className="input input-sm num" type="number" step="0.01" value={value} onChange={e => setValue(e.target.value)} disabled={c.price_source !== "manual"} title={c.price_source === "tcgplayer" ? "Synced from TCGplayer — unlink to edit by hand" : c.price_source === "comp" ? "Set from the last sale — edit it under Last sold" : ""} /></td>
       <td><input className="input input-sm num" type="number" min="0" max="100" placeholder={`${auto} auto`} value={bb} onChange={e => setBb(e.target.value)} /></td>
       <td><input className="input input-sm num" type="number" step="0.1" min="0.1" value={weight} onChange={e => setWeight(e.target.value)} /></td>
       <td>{inPool && total ? pct(Number(c.weight) / total) : "—"}</td>
       <td className="nowrap"><TcgStatus row={c} /><br /><button className="link-button" onClick={onLink}>{c.tcg_product_id ? "Relink" : "Link"}</button>{c.tcg_product_id && <> · <button className="link-button" onClick={onUnlink}>Unlink</button></>}</td>
+      <td><CompCell row={c} onEdit={onComp} /></td>
       <td>{STATUS[c.status] || c.status}</td>
       <td className="nowrap">
-        {dirty && <button className="btn btn-small" onClick={() => onSave({ ...(c.price_source === "tcgplayer" ? {} : { value }), weight, buyback_percent: bb })}>Save</button>}{" "}
+        {dirty && <button className="btn btn-small" onClick={() => onSave({ ...(c.price_source !== "manual" ? {} : { value }), weight, buyback_percent: bb })}>Save</button>}{" "}
         {c.status === "available" && <button className="link-button" onClick={() => onSave({ status: "retired" })}>Remove</button>}
         {c.status === "retired" && <button className="link-button" onClick={() => onSave({ status: "available" })}>Restore</button>}
       </td>
@@ -303,5 +309,48 @@ function Shipment({ s, onShip }) {
         <button className="btn btn-small" onClick={() => onShip(tracking)}>Mark shipped</button>
       </div>
     </div>
+  );
+}
+
+function CompCell({ row, onEdit }) {
+  return (
+    <span className="small">
+      {row.comp_cents != null ? (
+        <>
+          {row.comp_url ? <a href={row.comp_url} target="_blank" rel="noreferrer">{centsToMoney(row.comp_cents)}</a> : centsToMoney(row.comp_cents)}
+          <span className="muted"> · {row.comp_source || "sale"}{row.comp_date ? ` · ${String(row.comp_date).slice(5, 10)}` : ""}</span>
+          {row.price_source === "comp" && <span className="tag-sync"> value</span>}
+          <br />
+        </>
+      ) : null}
+      <button className="link-button" onClick={onEdit}>{row.comp_cents != null ? "Edit" : "Add"}</button>
+    </span>
+  );
+}
+
+// Record a card's most recent sale from eBay, Goldin, Card Ladder, etc.
+function CompEditor({ row, onSave, onClose }) {
+  const [price, setPrice] = useState(row.comp_cents != null ? (row.comp_cents / 100).toFixed(2) : "");
+  const [source, setSource] = useState(row.comp_source || "eBay");
+  const [date, setDate] = useState(row.comp_date ? String(row.comp_date).slice(0, 10) : new Date().toISOString().slice(0, 10));
+  const [url, setUrl] = useState(row.comp_url || "");
+  const [use, setUse] = useState(row.price_source === "comp" || (row.price_source === "manual" && row.comp_cents == null));
+  const synced = row.price_source === "tcgplayer";
+
+  return (
+    <Modal title={`Last sold · ${row.name}`} onClose={onClose}>
+      <form className="stack" onSubmit={e => { e.preventDefault(); onSave({ price, source, date, url, use: use && !synced }); }}>
+        <div className="comp-row">
+          <label className="field">Sold for ($)<input className="input" type="number" min="0" step="0.01" required value={price} onChange={e => setPrice(e.target.value)} /></label>
+          <label className="field">Where<select className="input" value={source} onChange={e => setSource(e.target.value)}>{COMP_SOURCES.map(s => <option key={s}>{s}</option>)}</select></label>
+          <label className="field">Date<input className="input" type="date" value={date} onChange={e => setDate(e.target.value)} /></label>
+        </div>
+        <label className="field">Link to the sale (optional)<input className="input" type="url" placeholder="https://www.ebay.com/itm/…" value={url} onChange={e => setUrl(e.target.value)} /></label>
+        {synced
+          ? <p className="muted small">This card’s price syncs from TCGplayer. The last sale is kept as the backup and used automatically whenever TCGplayer has no price.</p>
+          : <label className="check"><input type="checkbox" checked={use} onChange={e => setUse(e.target.checked)} /><span>Use this sale as the card’s value (best for graded slabs)</span></label>}
+        <button className="btn btn-block">Save last sale</button>
+      </form>
+    </Modal>
   );
 }

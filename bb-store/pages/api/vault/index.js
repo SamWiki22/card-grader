@@ -8,7 +8,7 @@ export default async function handler(req, res) {
   if (!user) return;
   const [balance, cards, ledger, shipments, rules] = await Promise.all([
     getBalance(user.id, user.email),
-    db.from("pack_cards").select("id,tier_id,name,set_name,grade,market_value_cents,buyback_percent,status,held_at")
+    db.from("pack_cards").select("id,tier_id,name,set_name,grade,market_value_cents,buyback_percent,status,held_at,price_source,comp_cents,comp_source,comp_date,comp_url")
       .eq("owner_id", user.id).in("status", ["held", "ship_requested", "shipped"]).order("held_at", { ascending: false }),
     db.from("ledger").select("id,kind,amount_cents,note,created_at").eq("user_id", user.id).order("created_at", { ascending: false }).limit(50),
     db.from("shipments").select("id,card_ids,status,tracking,created_at,shipped_at").eq("user_id", user.id).order("created_at", { ascending: false }).limit(20),

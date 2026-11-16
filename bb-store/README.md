@@ -42,7 +42,10 @@ any card can have its own %). A sold-back card goes back into its pool.
 
 Market values can be linked to TCGplayer (via tcgcsv.com's free daily mirror). Linked cards and store singles
 re-sync every day at 21:30 UTC (`vercel.json` cron → `/api/cron/refresh-prices`, protected by `CRON_SECRET`),
-or on demand with **Refresh TCGplayer prices** in admin.
+or on demand with **Refresh TCGplayer prices** in admin. Backup price: each card can store its last sale
+(eBay, Goldin, Card Ladder, Fanatics Collect, Heritage) with a link. It can be the card's value (graded slabs),
+and it's used automatically when TCGplayer has no price. Games: Pokémon, Magic, Dragon Ball (Fusion World and
+Masters catalogs) and One Piece each have five tiers.
 
 Pages: `/packs` (open) · `/vault` (cards, sell back, ship, activity) · `/packs/rules` · `/admin/packs`.
 

@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import Modal from "./Modal";
-import { GAME_LABEL, centsToMoney } from "../lib/shared";
+import { centsToMoney } from "../lib/shared";
 
-// Find a card on TCGplayer: pick game → set → search → printing.
+// Find a card on TCGplayer: pick catalog (game) → set → search → printing.
 // Calls onPick({ categoryId, groupId, productId, subType, name, setName, number, imageUrl, cents, autoPrice }).
-export default function TcgPicker({ games, initialGame, onPick, onClose, title = "Find on TCGplayer" }) {
-  const [game, setGame] = useState(games.includes(initialGame) ? initialGame : games[0]);
+export default function TcgPicker({ sources, initialGame, onPick, onClose, title = "Find on TCGplayer" }) {
+  const [game, setGame] = useState((sources.find(s => s.game === initialGame) || sources[0]).id);
   const [sets, setSets] = useState([]);
   const [setFilter, setSetFilter] = useState("");
   const [group, setGroup] = useState("");
@@ -17,7 +17,7 @@ export default function TcgPicker({ games, initialGame, onPick, onClose, title =
 
   useEffect(() => {
     setSets([]); setGroup(""); setCards(null); setError("");
-    fetch(`/api/admin/tcg?game=${game}`).then(r => r.json()).then(d => d.error ? setError(d.error) : setSets(d.sets)).catch(() => setError("Couldn’t load sets."));
+    fetch(`/api/admin/tcg?source=${game}`).then(r => r.json()).then(d => d.error ? setError(d.error) : setSets(d.sets)).catch(() => setError("Couldn’t load sets."));
   }, [game]);
 
   const shownSets = useMemo(() => {
@@ -30,7 +30,7 @@ export default function TcgPicker({ games, initialGame, onPick, onClose, title =
     if (!group) return setError("Pick a set first.");
     setBusy(true); setError("");
     try {
-      const r = await fetch(`/api/admin/tcg?game=${game}&group=${group}&q=${encodeURIComponent(q)}`);
+      const r = await fetch(`/api/admin/tcg?source=${game}&group=${group}&q=${encodeURIComponent(q)}`);
       const d = await r.json();
       if (!r.ok) throw new Error(d.error);
       setCards(d.cards);
@@ -45,7 +45,7 @@ export default function TcgPicker({ games, initialGame, onPick, onClose, title =
     <Modal title={title} onClose={onClose} wide>
       <div className="tcg-controls">
         <select className="input" value={game} onChange={e => setGame(e.target.value)} aria-label="Game">
-          {games.map(g => <option key={g} value={g}>{GAME_LABEL[g]}</option>)}
+          {sources.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
         </select>
         <input className="input" placeholder="Filter sets (e.g. Evolving, OP-05)" value={setFilter} onChange={e => setSetFilter(e.target.value)} />
         <select className="input" value={group} onChange={e => setGroup(e.target.value)} aria-label="Set">

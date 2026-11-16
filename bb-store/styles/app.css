@@ -241,3 +241,8 @@
 .app a.text-link { color: var(--teal); }
 .app a.buy-btn { color: #0b1426; }
 .vault-row { flex-wrap: wrap; row-gap: 6px; }
+/* Four games: compact two-line buttons on phones */
+@media (max-width: 480px) {
+  .seg { display: grid; grid-template-columns: repeat(4, 1fr); }
+  .seg-btn { flex-direction: column; gap: 5px; padding: 8px 2px; font-size: 13px; white-space: nowrap; }
+}

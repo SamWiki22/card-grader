@@ -4,8 +4,18 @@
 
 const BASE = "https://tcgcsv.com/tcgplayer";
 
-// Store game id → TCGplayer category id.
-export const TCG_CATEGORY = { pokemon: 3, onepiece: 68, mtg: 1, dbs: 80, gundam: 86, unionarena: 81 };
+// TCGplayer catalogs you can search, mapped to the store's games.
+// Dragon Ball has two: the current Fusion World game and the older Masters game.
+export const TCG_SOURCES = [
+  { id: "pokemon", game: "pokemon", categoryId: 3, label: "Pokémon" },
+  { id: "mtg", game: "mtg", categoryId: 1, label: "Magic: The Gathering" },
+  { id: "dbs-fw", game: "dbs", categoryId: 80, label: "Dragon Ball Fusion World" },
+  { id: "dbs-masters", game: "dbs", categoryId: 27, label: "Dragon Ball Super Masters" },
+  { id: "onepiece", game: "onepiece", categoryId: 68, label: "One Piece" },
+  { id: "gundam", game: "gundam", categoryId: 86, label: "Gundam" },
+  { id: "unionarena", game: "unionarena", categoryId: 81, label: "Union Arena" },
+];
+const sourceCat = id => TCG_SOURCES.find(s => s.id === id)?.categoryId;
 
 const cache = new Map(); // path -> { at, data }
 
@@ -25,8 +35,8 @@ const toCents = n => (n == null ? null : Math.round(Number(n) * 100));
 const ext = (p, key) => (p.extendedData || []).find(e => e.name === key)?.value || "";
 
 // Sets for a game, newest first.
-export async function listSets(game) {
-  const cat = TCG_CATEGORY[game];
+export async function listSets(sourceId) {
+  const cat = sourceCat(sourceId);
   if (!cat) return [];
   const groups = await get(`/${cat}/groups`, 12 * HOUR);
   // Real release dates look like "2021-08-27T00:00:00"; sets with no date get
@@ -51,8 +61,8 @@ export async function setPrices(categoryId, groupId) {
 }
 
 // Single cards in a set matching a search, each with its price per printing.
-export async function searchCards(game, groupId, q) {
-  const cat = TCG_CATEGORY[game];
+export async function searchCards(sourceId, groupId, q) {
+  const cat = sourceCat(sourceId);
   if (!cat || !groupId) return [];
   const [products, prices] = await Promise.all([get(`/${cat}/${groupId}/products`, 12 * HOUR), setPrices(cat, groupId)]);
   const terms = String(q || "").toLowerCase().split(/\s+/).filter(Boolean);

@@ -73,7 +73,9 @@ and logins, the same project BB Inventory already uses), **Vercel** (hosting), a
 7. **TCGplayer prices:** click **Find on TCGplayer** when adding a card. Pick the set, search the name and click
    the printing (Holofoil, Reverse Holo…). Leave "keep synced" ticked and the value updates daily. Use
    **Link** in the **Store singles** table to do the same for singles from BB Inventory.
-   Graded slabs: TCGplayer prices raw cards, so enter slab values by hand (don't sync them).
+   Graded slabs: TCGplayer prices raw cards, so for slabs click **Add** under **Last sold** instead. Enter the
+   last sale price from eBay, Goldin or Card Ladder (with the link), and tick "Use this sale as the card's value".
+   A last sale on a TCGplayer-synced card is kept as its backup price, used whenever TCGplayer has none.
 
 ## Step 6 — Your own domain (optional)
 1. In Vercel, open the project, go to **Settings → Domains**, and add e.g. `beardedbeartcg.com`.

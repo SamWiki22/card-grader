@@ -1,9 +1,10 @@
 // Server-only: pull fresh TCGplayer market prices for every card set to
-// "price from TCGplayer" — pack-pool / vault cards and store singles.
+// "price from TCGplayer" — pack-pool / vault cards and store singles. When
+// TCGplayer has no price for a card, its recorded last sale (comp) is used instead.
 import { db } from "./catalog";
 import { setPrices } from "./tcg";
 
-const LINK = "id,tcg_category_id,tcg_group_id,tcg_product_id,tcg_subtype";
+const LINK = "id,tcg_category_id,tcg_group_id,tcg_product_id,tcg_subtype,comp_cents";
 
 export async function refreshPrices() {
   const [cards, items] = await Promise.all([
@@ -24,10 +25,11 @@ export async function refreshPrices() {
   }
 
   const now = new Date().toISOString();
-  let updated = 0, unchanged = 0, missing = 0;
+  let updated = 0, unchanged = 0, missing = 0, fromComp = 0;
   for (const r of rows) {
     const prices = (await sets.get(`${r.tcg_category_id}/${r.tcg_group_id}`))?.get(Number(r.tcg_product_id));
-    const cents = prices ? (prices[r.tcg_subtype] ?? Object.values(prices)[0]) : null;
+    let cents = prices ? (prices[r.tcg_subtype] ?? Object.values(prices)[0]) : null;
+    if (cents == null && r.comp_cents != null) { cents = Number(r.comp_cents); fromComp++; }
     if (cents == null) { missing++; continue; }
     if (r.kind === "card") {
       if (cents === Number(r.market_value_cents)) { unchanged++; continue; }
@@ -38,5 +40,5 @@ export async function refreshPrices() {
     }
     updated++;
   }
-  return { checked: rows.length, updated, unchanged, missing };
+  return { checked: rows.length, updated, unchanged, missing, fromComp };
 }

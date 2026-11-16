@@ -306,3 +306,29 @@ revoke all on function sell_back(uuid, text) from public, anon, authenticated;
 revoke all on function set_buyback_rules(jsonb) from public, anon, authenticated;
 grant execute on function sell_back(uuid, text) to service_role;
 grant execute on function set_buyback_rules(jsonb) to service_role;
+
+-- ── v3: last-sold comps as backup prices + Magic / Dragon Ball tiers ─────
+
+-- Last recorded sale (eBay, Goldin, Card Ladder…). Used as the card's value when
+-- price_source = 'comp', and as the fallback when TCGplayer has no price.
+alter table pack_cards add column if not exists comp_cents bigint check (comp_cents >= 0);
+alter table pack_cards add column if not exists comp_source text;
+alter table pack_cards add column if not exists comp_date date;
+alter table pack_cards add column if not exists comp_url text;
+alter table if exists items add column if not exists comp_cents bigint;
+alter table if exists items add column if not exists comp_source text;
+alter table if exists items add column if not exists comp_date date;
+alter table if exists items add column if not exists comp_url text;
+
+insert into pack_tiers (id, game, name, price_cents, color, sort) values
+  ('mtg-cub',      'mtg', 'Cub',     500,   '#b07a4a', 1),
+  ('mtg-grizzly',  'mtg', 'Grizzly', 1000,  '#9aa3b8', 2),
+  ('mtg-kodiak',   'mtg', 'Kodiak',  2500,  '#e0b04a', 3),
+  ('mtg-polar',    'mtg', 'Polar',   5000,  '#4fc3b6', 4),
+  ('mtg-alpha',    'mtg', 'Alpha',   10000, '#c0457a', 5),
+  ('dbs-cub',      'dbs', 'Cub',     500,   '#b07a4a', 1),
+  ('dbs-grizzly',  'dbs', 'Grizzly', 1000,  '#9aa3b8', 2),
+  ('dbs-kodiak',   'dbs', 'Kodiak',  2500,  '#e0b04a', 3),
+  ('dbs-polar',    'dbs', 'Polar',   5000,  '#4fc3b6', 4),
+  ('dbs-alpha',    'dbs', 'Alpha',   10000, '#c0457a', 5)
+on conflict (id) do nothing;
