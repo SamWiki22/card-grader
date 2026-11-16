@@ -1,17 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 
-// A Bearded Bear foil pack drawn in CSS, tinted by the tier color.
+// A foil booster pack drawn in CSS: textured silver foil, iridescent streaks,
+// crimped ends, the Bearded Bear logo, and "GAME · TIER" across the bottom.
 export default function PackArt({ tier, gameLabel, state = "idle" }) {
   return (
-    <div className={`pack pack-${state}`} style={{ "--tier": tier.color }}>
-      <div className="pack-crimp top" />
-      <div className="pack-body">
-        <div className="pack-shine" />
-        <img src="/logo.png" alt="" className="pack-logo" />
-        <div className="pack-tier">{tier.name}</div>
-        <div className="pack-game">{gameLabel}</div>
+    <div className={`foil-pack foil-${state}`} style={{ "--tier": tier.color }}>
+      <div className="foil-crimp top" />
+      <div className="foil-body">
+        <span className="streak s1" /><span className="streak s2" /><span className="streak s3" /><span className="streak s4" />
+        <div className="foil-sheen" />
+        <img src="/logo.png" alt="" className="foil-logo" />
+        <div className="foil-caption">{gameLabel} · {tier.name}</div>
       </div>
-      <div className="pack-crimp bottom" />
+      <div className="foil-crimp bottom" />
     </div>
   );
 }

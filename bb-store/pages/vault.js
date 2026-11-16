@@ -1,21 +1,19 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import Layout from "../components/Layout";
+import AppShell from "../components/AppShell";
 import Modal from "../components/Modal";
 import SignIn from "../components/SignIn";
-import AddFunds from "../components/AddFunds";
 import { CardImage } from "../components/PackArt";
 import { useMe, postJSON } from "../lib/me";
 import { centsToMoney } from "../lib/shared";
 
-const STATUS = { held: "In vault", ship_requested: "Shipping requested", shipped: "Shipped" };
-const KIND = { deposit: "Added funds", pack_open: "Pack opened", buyback: "Sold back", shipping: "Shipping", adjustment: "Adjustment" };
+const STATUS = { ship_requested: "Shipping requested", shipped: "Shipped" };
 
 export default function Vault() {
   const me = useMe();
   const [data, setData] = useState(null);
   const [selected, setSelected] = useState([]);
-  const [modal, setModal] = useState(null); // signin | funds | ship | {sell: card}
+  const [modal, setModal] = useState(null); // signin | ship | {sell: card}
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [error, setError] = useState("");
@@ -46,94 +44,81 @@ export default function Vault() {
 
   if (!me.loading && !me.user) {
     return (
-      <Layout title="Vault">
-        <section className="wrap section empty">
+      <AppShell title="Vault">
+        <div className="app-empty">
           <img src="/logo.png" alt="" width="110" height="110" />
-          <h1 className="page-title">Your vault</h1>
-          <p>Every card you pull from a pack lands here. Sign in to see yours.</p>
-          {me.ready && <div className="hero-ctas center"><button className="btn" onClick={() => setModal("signin")}>Sign in</button></div>}
-        </section>
+          <h1>Your vault</h1>
+          <p>Every card you pull from a pack lands here.</p>
+          {me.ready && <button className="buy-btn narrow" onClick={() => setModal("signin")}><span>Sign in</span></button>}
+        </div>
         {modal === "signin" && <SignIn onClose={() => setModal(null)} />}
-      </Layout>
+      </AppShell>
     );
   }
 
-  return (
-    <Layout title="Vault">
-      <section className="wrap section">
-        <div className="vault-head">
-          <div>
-            <h1 className="page-title">Your vault</h1>
-            <p className="muted">{me.user?.email}</p>
-          </div>
-          <div className="vault-stats">
-            <div><span className="muted small">Balance</span><b>{centsToMoney(me.balance_cents)}</b><button className="link-button" onClick={() => setModal("funds")}>Add funds</button></div>
-            <div><span className="muted small">Vault value</span><b>{centsToMoney(vaultValue)}</b><span className="muted small">{held.length} card{held.length === 1 ? "" : "s"}</span></div>
-          </div>
+  const bar = held.length > 0 && (
+    <div className="buy-bar">
+      <div className="buy-bar-inner">
+        <div className="buy-bar-top">
+          <span className="caps">{selected.length ? `${selected.length} selected` : "Tap cards to ship them home"}</span>
+          {selected.length > 0 && <button className="add-link" onClick={() => setSelected([])}>Clear</button>}
         </div>
+        <button className="buy-btn" disabled={!selected.length} onClick={() => setModal("ship")}>
+          <span>{selected.length ? `Ship ${selected.length} card${selected.length === 1 ? "" : "s"}` : "Select cards to ship"}</span>
+        </button>
+      </div>
+    </div>
+  );
 
-        {msg && <p className="banner light">{msg}</p>}
-        {error && <p className="error">{error}</p>}
+  return (
+    <AppShell title="Vault" bar={bar}>
+      <div className="app-head">
+        <h1>Vault</h1>
+        <div className="stat-row">
+          <div className="stat"><span className="caps">Vault value</span><b>{centsToMoney(vaultValue)}</b></div>
+          <div className="stat"><span className="caps">Cards</span><b>{held.length}</b></div>
+          <div className="stat"><span className="caps">Balance</span><b>{centsToMoney(me.balance_cents)}</b></div>
+        </div>
+      </div>
 
-        {!data ? <p className="muted">Loading…</p> : !held.length ? (
-          <div className="empty">
-            <p>No cards in your vault yet.</p>
-            <div className="hero-ctas center"><Link href="/packs" className="btn">Open a pack</Link></div>
-          </div>
-        ) : (
-          <>
-            <div className="vault-actions">
-              <span className="muted small">{selected.length ? `${selected.length} selected` : "Select cards to ship them to you"}</span>
-              <button className="btn btn-small" disabled={!selected.length} onClick={() => setModal("ship")}>Ship selected</button>
-            </div>
-            <div className="grid">
-              {held.map(c => (
-                <article key={c.id} className={`card vault-card${selected.includes(c.id) ? " picked" : ""}`}>
-                  <label className="vault-select"><input type="checkbox" checked={selected.includes(c.id)} onChange={() => toggle(c.id)} /> Ship</label>
+      {msg && <p className="app-banner">{msg}</p>}
+      {error && <p className="buy-error">{error}</p>}
+
+      {!data ? <p className="dim">Loading…</p> : !held.length ? (
+        <div className="app-empty small-empty">
+          <p>No cards in your vault yet.</p>
+          <Link href="/packs" className="buy-btn narrow"><span>Open a pack</span></Link>
+        </div>
+      ) : (
+        <div className="vault-grid">
+          {held.map(c => {
+            const on = selected.includes(c.id);
+            return (
+              <div key={c.id} className={`vault-item${on ? " on" : ""}`}>
+                <button className="vault-pick" onClick={() => toggle(c.id)} aria-pressed={on} aria-label={`Select ${c.name} for shipping`}>
                   <CardImage card={c} />
-                  <div className="card-body">
-                    <h3 className="card-title">{c.name}</h3>
-                    {c.set_name && <p className="card-set">{c.set_name}</p>}
-                  </div>
-                  <div className="card-foot">
-                    <div className="price">{centsToMoney(c.market_value_cents)}</div>
-                    <button className="btn btn-small btn-ghost-dark" onClick={() => setModal({ sell: c })}>Sell back</button>
-                  </div>
-                </article>
-              ))}
-            </div>
-          </>
-        )}
+                  {on && <span className="vault-check">✓</span>}
+                </button>
+                <div className="in-pack-name">{c.name}</div>
+                <div className="vault-row">
+                  <span className="in-pack-value">{centsToMoney(c.market_value_cents)}</span>
+                  <button className="mini-pill" onClick={() => setModal({ sell: c })}>Sell {data.buyback_percent}%</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
-        {other.length > 0 && (
-          <>
-            <h2 className="sub-title">Shipping</h2>
-            <ul className="list">
-              {other.map(c => <li key={c.id}><span>{c.name}{c.grade ? ` · ${c.grade}` : ""}</span><span className="muted">{STATUS[c.status]}</span></li>)}
-            </ul>
-            {data.shipments.some(s => s.tracking) && (
-              <ul className="list">
-                {data.shipments.filter(s => s.tracking).map(s => <li key={s.id}><span>Shipment #{s.id}</span><span>Tracking: {s.tracking}</span></li>)}
-              </ul>
-            )}
-          </>
-        )}
-
-        {data?.ledger.length > 0 && (
-          <>
-            <h2 className="sub-title">Activity</h2>
-            <ul className="list">
-              {data.ledger.map(l => (
-                <li key={l.id}>
-                  <span>{KIND[l.kind] || l.kind}<span className="muted small"> · {l.note} · {new Date(l.created_at).toLocaleDateString()}</span></span>
-                  <b className={l.amount_cents >= 0 ? "pos" : "neg"}>{l.amount_cents >= 0 ? "+" : "−"}{centsToMoney(Math.abs(l.amount_cents))}</b>
-                </li>
-              ))}
-            </ul>
-          </>
-        )}
-        {me.user && <button className="link-button signout" onClick={me.signOut}>Sign out</button>}
-      </section>
+      {other.length > 0 && (
+        <section className="app-section">
+          <h2>On the way</h2>
+          <ul className="app-list">
+            {other.map(c => <li key={c.id}><span>{c.name}{c.grade ? ` · ${c.grade}` : ""}</span><span className="dim">{STATUS[c.status]}</span></li>)}
+            {data.shipments.filter(s => s.tracking).map(s => <li key={`s${s.id}`}><span>Shipment #{s.id}</span><span className="dim">Tracking {s.tracking}</span></li>)}
+          </ul>
+        </section>
+      )}
 
       {modal?.sell && (
         <Modal title="Sell this card back?" onClose={() => setModal(null)}>
@@ -144,8 +129,7 @@ export default function Vault() {
       )}
       {modal === "ship" && <ShipForm cards={held.filter(c => selected.includes(c.id))} fee={data.ship_fee_cents} onClose={() => setModal(null)}
         onDone={async n => { setModal(null); setSelected([]); setMsg(`Shipping requested for ${n} card${n === 1 ? "" : "s"}. We’ll email you tracking.`); await load(); me.refresh(); }} />}
-      {modal === "funds" && <AddFunds onClose={() => setModal(null)} />}
-    </Layout>
+    </AppShell>
   );
 }
 

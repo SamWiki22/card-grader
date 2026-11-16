@@ -1,5 +1,6 @@
 import "../styles/globals.css";
 import "../styles/packs.css";
+import "../styles/app.css";
 import { CartProvider } from "../lib/cart";
 import { MeProvider } from "../lib/me";
 

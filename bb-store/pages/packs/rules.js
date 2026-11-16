@@ -1,13 +1,13 @@
 import Link from "next/link";
-import Layout from "../../components/Layout";
+import AppShell from "../../components/AppShell";
 import { BUYBACK_PERCENT, SHIP_FEE_CENTS } from "../../lib/packs";
 import { centsToMoney } from "../../lib/shared";
 
 export default function Rules({ buyback, shipFee, contactEmail }) {
   return (
-    <Layout title="Pack rules & odds">
-      <section className="wrap section prose">
-        <h1 className="page-title">Pack rules &amp; odds</h1>
+    <AppShell title="Odds & rules">
+      <section className="app-prose">
+        <h1>Odds &amp; rules</h1>
 
         <h2>How it works</h2>
         <ol>
@@ -33,9 +33,9 @@ export default function Rules({ buyback, shipFee, contactEmail }) {
           <li>Balance is credit for Bearded Bear Packs. It isn’t a bank account and doesn’t earn interest.</li>
           <li>Questions or problems? {contactEmail ? <a href={`mailto:${contactEmail}`}>Email us</a> : "Contact us"} and we’ll make it right.</li>
         </ul>
-        <p><Link href="/packs" className="btn">Back to packs</Link></p>
+        <Link href="/packs" className="buy-btn narrow"><span>Back to packs</span></Link>
       </section>
-    </Layout>
+    </AppShell>
   );
 }
 
