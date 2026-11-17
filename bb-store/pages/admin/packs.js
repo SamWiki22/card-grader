@@ -4,7 +4,7 @@ import SignIn from "../../components/SignIn";
 import TcgPicker from "../../components/TcgPicker";
 import Modal from "../../components/Modal";
 import { useMe, postJSON } from "../../lib/me";
-import { GAME_LABEL, COMP_SOURCES, centsToMoney } from "../../lib/shared";
+import { GAME_LABEL, GAME_SHORT, COMP_SOURCES, centsToMoney, money } from "../../lib/shared";
 
 const pct = n => `${(n * 100).toFixed(1)}%`;
 const STATUS = { available: "In pool", held: "In a vault", ship_requested: "To ship", shipped: "Shipped", retired: "Pulled from pool" };
@@ -33,7 +33,21 @@ function ruleFor(valueCents, rules) {
   return p;
 }
 
+// On phones, admin tables become stacked cards: copy each column heading onto
+// its cells so CSS can show "Price · $10" style labels.
+function useTableLabels() {
+  useEffect(() => {
+    for (const table of document.querySelectorAll(".admin .table")) {
+      const heads = [...table.querySelectorAll("thead th")].map(th => th.textContent.trim());
+      for (const tr of table.querySelectorAll("tbody tr")) {
+        [...tr.children].forEach((td, i) => { if (heads[i]) td.setAttribute("data-label", heads[i]); else td.removeAttribute("data-label"); });
+      }
+    }
+  });
+}
+
 export default function AdminPacks() {
+  useTableLabels();
   const me = useMe();
   const [data, setData] = useState(null);
   const [denied, setDenied] = useState("");
@@ -214,7 +228,7 @@ function TierRow({ t, active, onPick, onSave }) {
   const warn = t.margin !== null && t.margin < 0.1;
   return (
     <tr className={active ? "row-active" : ""}>
-      <td>{GAME_LABEL[t.game]}</td>
+      <td>{GAME_SHORT[t.game]}</td>
       <td><input className="input input-sm" value={name} onChange={e => setName(e.target.value)} /></td>
       <td><input className="input input-sm num" type="number" step="0.01" min="0.5" value={price} onChange={e => setPrice(e.target.value)} /></td>
       <td>{t.poolSize}</td>
@@ -288,7 +302,7 @@ function CardRow({ c, rules, total, onSave, onLink, onUnlink, onComp }) {
   const auto = ruleFor(c.market_value_cents, rules);
   return (
     <tr className={inPool ? "" : "row-dim"}>
-      <td>{c.name}<div className="muted small">{c.set_name}</div></td>
+      <td>{c.name}<div className="muted small">{c.set_name}{c.owner ? ` · ${OWNER_NAMES[c.owner] || c.owner}` : ""}{c.cost_cents ? ` · cost ${centsToMoney(c.cost_cents)}` : ""}</div></td>
       <td>{c.grade}</td>
       <td><input className="input input-sm num" type="number" step="0.01" value={value} onChange={e => setValue(e.target.value)} disabled={c.price_source !== "manual"} title={c.price_source === "tcgplayer" ? "Synced from TCGplayer — unlink to edit by hand" : c.price_source === "comp" ? "Set from the last sale — edit it under Last sold" : ""} /></td>
       <td><input className="input input-sm num" type="number" min="0" max="100" placeholder={`${auto} auto`} value={bb} onChange={e => setBb(e.target.value)} /></td>
@@ -496,7 +510,8 @@ function parseCSV(text) {
   if (cell || row.length) { row.push(cell); rows.push(row); }
   return rows.filter(r => r.some(x => x.trim()));
 }
-const COLS = { name: ["name", "card", "card name", "title"], set: ["set", "set name", "expansion"], grade: ["grade", "condition"], value: ["value", "price", "market", "market value"], qty: ["qty", "quantity", "count"], image: ["image", "photo", "image url", "img"], weight: ["weight"] };
+const OWNER_NAMES = { sam: "Sam", bear_umer: "Bear / Umer", shared: "Shared 50/50" };
+const COLS = { owner: ["owner"], cost: ["cost"], name: ["name", "card", "card name", "title"], set: ["set", "set name", "expansion"], grade: ["grade", "condition"], value: ["value", "price", "market", "market value"], qty: ["qty", "quantity", "count"], image: ["image", "photo", "image url", "img"], weight: ["weight"] };
 
 // Import CSV: spreadsheet → pool. Columns (any order): name, set, grade, value, qty, image, weight.
 function ImportPool({ tier, act }) {
@@ -505,7 +520,20 @@ function ImportPool({ tier, act }) {
   async function onFile(e) {
     const file = e.target.files?.[0]; e.target.value = ""; setErr(""); setRows(null);
     if (!file) return;
-    const table = parseCSV(await file.text());
+    const text = await file.text();
+    // IllestCollect pool export (JSON): only cards still in stock and not deleted.
+    if (/\.json$/i.test(file.name) || text.trim().startsWith("[")) {
+      let list;
+      try { list = JSON.parse(text); } catch { return setErr("That JSON file couldn’t be read."); }
+      if (!Array.isArray(list)) return setErr("Expected a list of cards.");
+      const live = list.filter(c => c && c.name && c.in_stock !== false && !c.deleted_at);
+      return setRows(live.map(c => ({
+        name: c.name, set: c.set || "", value: c.value ?? c.price ?? "", qty: 1, weight: 1,
+        grade: c.graded ? [c.gradingCo, c.grade].filter(Boolean).join(" ") : (c.grade || c.condition || "Raw"),
+        image: c.imgUrl || c.image || "", owner: c.owner || "", cost: c.cost ?? "",
+      })));
+    }
+    const table = parseCSV(text);
     if (table.length < 2) return setErr("That file has no rows.");
     const head = table[0].map(h => h.trim().toLowerCase());
     const idx = Object.fromEntries(Object.entries(COLS).map(([k, names]) => [k, head.findIndex(h => names.includes(h))]));
@@ -515,11 +543,11 @@ function ImportPool({ tier, act }) {
   const template = "data:text/csv;charset=utf-8," + encodeURIComponent("name,set,grade,value,qty,image,weight\nSon Goku SCR FB01-139,Awakened Pulse,PSA 10,120,1,,0.5\nVegeta SR FB02-061,Blazing Aura,Raw NM,6.50,3,,1\n");
   return (
     <div className="import-pool">
-      <label className="btn btn-small btn-ghost-dark">⬆ Import CSV into {tier.name}<input type="file" accept=".csv,text/csv" onChange={onFile} hidden /></label>
+      <label className="btn btn-small btn-ghost-dark">⬆ Import CSV / IllestCollect JSON into {tier.name}<input type="file" accept=".csv,text/csv,.json,application/json" onChange={onFile} hidden /></label>
       <a className="small" href={template} download="pool-template.csv">Download template</a>
       {rows && (
         <span className="small">
-          {rows.length} card{rows.length === 1 ? "" : "s"} ({rows.reduce((s, r) => s + (Number(r.qty) || 1), 0)} copies) ready ·{" "}
+          {rows.length} card{rows.length === 1 ? "" : "s"} ({rows.reduce((s, r) => s + (Number(r.qty) || 1), 0)} copies, {money(rows.reduce((s, r) => s + Number(r.value || 0) * (Number(r.qty) || 1), 0))} total value) ready ·{" "}
           <button className="btn btn-small" onClick={async () => { if (await act({ action: "import-pool", tier: tier.id, rows }, r => `Imported ${r.added} cards into ${tier.name}.`)) setRows(null); }}>Import</button>{" "}
           <button className="link-button" onClick={() => setRows(null)}>Cancel</button>
         </span>

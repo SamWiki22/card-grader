@@ -416,3 +416,7 @@ create table if not exists offers (
 );
 create index if not exists offers_status on offers (status, created_at desc);
 alter table offers enable row level security;
+
+-- ── v6: owner + cost on pack pool cards (partner split, imports) ─────────
+alter table pack_cards add column if not exists owner text not null default '';
+alter table pack_cards add column if not exists cost_cents bigint not null default 0;
