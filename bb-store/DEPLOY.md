@@ -95,6 +95,15 @@ Inventory lives at `/admin/store` (the **Admin** / **Inventory** link in the hea
   set Qty, Condition and Owner → **Add**. The picker reopens on the same set for the next card.
 - Not on TCGplayer? Type the name and set, add your own photo, and enter the price by hand.
 
+### Photo features and daily sales
+**📷 Snap to add** (in + Add cards or sealed) and **📷 Record sales** (photos or group-text screenshots of what sold)
+read photos with Claude. In Vercel add `ANTHROPIC_API_KEY` (copy it from the old BB Inventory project's settings,
+or create one at console.anthropic.com → API Keys). Each photo costs roughly 1–3¢.
+- Record sales: upload the photos, check each item's matched card (yellow = needs you to pick), set the price,
+  who sold it and the day, then **Record**. Stock goes down and the sale is logged with the photo.
+- **Sales** page (`/admin/sales`, admins only): today's total, day-by-day revenue and profit, Sam's and Bear/Umer's
+  shares (Shared items split 50/50), every sale with its photo, **Undo** (puts the stock back), and CSV export.
+
 ### Retiring the old BB Inventory app
 Once you don't need it, delete its project in Vercel, then run `supabase/lock-down.sql` in the Supabase SQL Editor.
 That closes the old app's open access to your inventory tables; the website keeps working.
