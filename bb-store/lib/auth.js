@@ -77,6 +77,13 @@ export async function getUser(req, res) {
   return null;
 }
 
+const emailIn = (user, list) => {
+  const emails = (list || "").toLowerCase().split(",").map(s => s.trim()).filter(Boolean);
+  return !!user?.email && emails.includes(user.email.toLowerCase());
+};
+// Staff (STAFF_EMAILS) can manage store inventory only; admins can do everything.
+export const isStaff = user => emailIn(user, process.env.ADMIN_EMAILS) || emailIn(user, process.env.STAFF_EMAILS);
+
 export function isAdmin(user) {
   const admins = (process.env.ADMIN_EMAILS || "").toLowerCase().split(",").map(s => s.trim()).filter(Boolean);
   return !!user?.email && admins.includes(user.email.toLowerCase());
@@ -87,6 +94,12 @@ export async function requireUser(req, res) {
   if (!packsReady()) { res.status(503).json({ error: "Packs aren’t set up yet." }); return null; }
   const user = await getUser(req, res);
   if (!user) { res.status(401).json({ error: "Please sign in." }); return null; }
+  return user;
+}
+export async function requireStaff(req, res) {
+  const user = await requireUser(req, res);
+  if (!user) return null;
+  if (!isStaff(user)) { res.status(403).json({ error: "Staff only." }); return null; }
   return user;
 }
 export async function requireAdmin(req, res) {
