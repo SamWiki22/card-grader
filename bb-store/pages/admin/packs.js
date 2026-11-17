@@ -4,7 +4,7 @@ import SignIn from "../../components/SignIn";
 import TcgPicker from "../../components/TcgPicker";
 import Modal from "../../components/Modal";
 import { useMe, postJSON } from "../../lib/me";
-import { GAME_LABEL, COMP_SOURCES, centsToMoney } from "../../lib/shared";
+import { GAME_LABEL, GAME_SHORT, COMP_SOURCES, centsToMoney, money } from "../../lib/shared";
 
 const pct = n => `${(n * 100).toFixed(1)}%`;
 const STATUS = { available: "In pool", held: "In a vault", ship_requested: "To ship", shipped: "Shipped", retired: "Pulled from pool" };
@@ -33,7 +33,21 @@ function ruleFor(valueCents, rules) {
   return p;
 }
 
+// On phones, admin tables become stacked cards: copy each column heading onto
+// its cells so CSS can show "Price · $10" style labels.
+function useTableLabels() {
+  useEffect(() => {
+    for (const table of document.querySelectorAll(".admin .table")) {
+      const heads = [...table.querySelectorAll("thead th")].map(th => th.textContent.trim());
+      for (const tr of table.querySelectorAll("tbody tr")) {
+        [...tr.children].forEach((td, i) => { if (heads[i]) td.setAttribute("data-label", heads[i]); else td.removeAttribute("data-label"); });
+      }
+    }
+  });
+}
+
 export default function AdminPacks() {
+  useTableLabels();
   const me = useMe();
   const [data, setData] = useState(null);
   const [denied, setDenied] = useState("");
@@ -104,13 +118,19 @@ export default function AdminPacks() {
 
         {tier && (
           <>
-            <h2 className="sub-title">{GAME_LABEL[tier.game]} · {tier.name} pool</h2>
+            <div className="pool-head-row">
+              <h2 className="sub-title">{GAME_LABEL[tier.game]} · {tier.name} pool</h2>
+              <select className="input pool-switch" value={tierId} onChange={e => setTierId(e.target.value)} aria-label="Switch pool">
+                {data.tiers.map(t => <option key={t.id} value={t.id}>{GAME_LABEL[t.game]} · {t.name} ({t.poolSize} cards)</option>)}
+              </select>
+            </div>
+            <ImportPool tier={tier} act={act} />
             <AddCard tier={tier} pick={pick} onAdd={b => act({ action: "add-card", tier_id: tier.id, ...b }, "Card added to pool.")} />
             <div className="table-wrap">
               <table className="table">
                 <thead><tr><th>Card</th><th>Grade</th><th>Value</th><th>Buyback</th><th>Weight</th><th>Chance</th><th>TCGplayer</th><th>Last sold</th><th>Status</th><th /></tr></thead>
                 <tbody>
-                  {cards.map(c => <CardRow key={c.id} c={c} rules={data.rules} total={cards.filter(x => x.status === "available").reduce((s, x) => s + Number(x.weight), 0)}
+                  {cards.map(c => <CardRow key={c.id} c={c} tiers={data.tiers} rules={data.rules} total={cards.filter(x => x.status === "available").reduce((s, x) => s + Number(x.weight), 0)}
                     onSave={b => act({ action: "update-card", id: c.id, ...b }, "Card updated.")}
                     onLink={() => pick(tier.game, t => act({ action: "link-tcg", target: "pack", id: c.id, tcg: t }, `Linked to TCGplayer${t.autoPrice ? " — price now follows market" : ""}.`))}
                     onUnlink={() => act({ action: "unlink-tcg", target: "pack", id: c.id }, "TCGplayer link removed; price is manual.")}
@@ -137,6 +157,7 @@ export default function AdminPacks() {
                   <td><TcgStatus row={i} /></td>
                   <td><CompCell row={i} onEdit={() => setComp({ target: "item", row: i })} /></td>
                   <td className="nowrap">
+                    <MoveToPool item={i} tiers={data.tiers} act={act} />{" "}
                     <button className="btn btn-small btn-ghost-dark" onClick={() => pick(i.game || "pokemon", t => act({ action: "link-tcg", target: "item", id: i.id, tcg: t }, `${i.name} linked${t.autoPrice ? " — store price now follows TCGplayer" : ""}.`))}>{i.tcg_product_id ? "Relink" : "Link"}</button>{" "}
                     {i.tcg_product_id && <button className="link-button" onClick={() => act({ action: "unlink-tcg", target: "item", id: i.id }, "Link removed.")}>Unlink</button>}
                   </td>
@@ -207,7 +228,7 @@ function TierRow({ t, active, onPick, onSave }) {
   const warn = t.margin !== null && t.margin < 0.1;
   return (
     <tr className={active ? "row-active" : ""}>
-      <td>{GAME_LABEL[t.game]}</td>
+      <td>{GAME_SHORT[t.game]}</td>
       <td><input className="input input-sm" value={name} onChange={e => setName(e.target.value)} /></td>
       <td><input className="input input-sm num" type="number" step="0.01" min="0.5" value={price} onChange={e => setPrice(e.target.value)} /></td>
       <td>{t.poolSize}</td>
@@ -271,7 +292,7 @@ function AddCard({ tier, games, pick, onAdd }) {
   );
 }
 
-function CardRow({ c, rules, total, onSave, onLink, onUnlink, onComp }) {
+function CardRow({ c, tiers, rules, total, onSave, onLink, onUnlink, onComp }) {
   const [value, setValue] = useState((c.market_value_cents / 100).toFixed(2));
   const [weight, setWeight] = useState(String(c.weight));
   const [bb, setBb] = useState(c.buyback_percent == null ? "" : String(c.buyback_percent));
@@ -281,7 +302,7 @@ function CardRow({ c, rules, total, onSave, onLink, onUnlink, onComp }) {
   const auto = ruleFor(c.market_value_cents, rules);
   return (
     <tr className={inPool ? "" : "row-dim"}>
-      <td>{c.name}<div className="muted small">{c.set_name}</div></td>
+      <td>{c.name}<div className="muted small">{c.set_name}{c.owner ? ` · ${OWNER_NAMES[c.owner] || c.owner}` : ""}{c.cost_cents ? ` · cost ${centsToMoney(c.cost_cents)}` : ""}</div></td>
       <td>{c.grade}</td>
       <td><input className="input input-sm num" type="number" step="0.01" value={value} onChange={e => setValue(e.target.value)} disabled={c.price_source !== "manual"} title={c.price_source === "tcgplayer" ? "Synced from TCGplayer — unlink to edit by hand" : c.price_source === "comp" ? "Set from the last sale — edit it under Last sold" : ""} /></td>
       <td><input className="input input-sm num" type="number" min="0" max="100" placeholder={`${auto} auto`} value={bb} onChange={e => setBb(e.target.value)} /></td>
@@ -294,6 +315,13 @@ function CardRow({ c, rules, total, onSave, onLink, onUnlink, onComp }) {
         {dirty && <button className="btn btn-small" onClick={() => onSave({ ...(c.price_source !== "manual" ? {} : { value }), weight, buyback_percent: bb })}>Save</button>}{" "}
         {c.status === "available" && <button className="link-button" onClick={() => onSave({ status: "retired" })}>Remove</button>}
         {c.status === "retired" && <button className="link-button" onClick={() => onSave({ status: "available" })}>Restore</button>}
+        {/* Move this card to another pool of the same game (live tiers first). */}
+        <select className="input input-sm move-select" value="" aria-label="Move to pool" onChange={e => e.target.value && onSave({ tier_id: e.target.value })}>
+          <option value="">Move to…</option>
+          {tiers.filter(t => t.game === tiers.find(x => x.id === c.tier_id)?.game && t.id !== c.tier_id)
+            .sort((a, b) => Number(b.active) - Number(a.active) || a.price_cents - b.price_cents)
+            .map(t => <option key={t.id} value={t.id}>{t.name} · {centsToMoney(t.price_cents)}{t.active ? "" : " (hidden)"}</option>)}
+        </select>
       </td>
     </tr>
   );
@@ -452,5 +480,86 @@ function GiveCredit({ act }) {
       </form>
       <p className="muted small">They need to have signed in once. Use a negative amount to take credit back.</p>
     </>
+  );
+}
+
+// → Pack: move copies of a store single into a pool (photo, name, value carried over).
+function MoveToPool({ item, tiers, act }) {
+  const [open, setOpen] = useState(false);
+  const own = tiers.filter(t => t.game === (item.game || "other"));
+  const list = own.length ? own : tiers;
+  const [tier, setTier] = useState(list[0]?.id || "");
+  const [qty, setQty] = useState(1);
+  const [value, setValue] = useState(Number(item.price).toFixed(2));
+  if (!open) return <button className="btn btn-small" disabled={item.quantity <= 0} onClick={() => setOpen(true)}>→ Pack</button>;
+  return (
+    <span className="move-pool">
+      <select className="input input-sm" value={tier} onChange={e => setTier(e.target.value)} aria-label="Pool">{list.map(t => <option key={t.id} value={t.id}>{GAME_LABEL[t.game]} · {t.name}</option>)}</select>
+      <input className="input input-sm num" type="number" min="1" max={item.quantity} value={qty} onChange={e => setQty(e.target.value)} aria-label="How many" title="How many copies" />
+      <span className="money-input">$<input className="input input-sm num" type="number" step="0.01" min="0" value={value} onChange={e => setValue(e.target.value)} aria-label="Pool value" title="Value in the pool" /></span>
+      <button className="btn btn-small" onClick={async () => { if (await act({ action: "move-to-pool", id: item.id, tier, qty, value }, `Moved ${qty} × ${item.name} into the pool.`)) setOpen(false); }}>Move</button>
+      <button className="link-button" onClick={() => setOpen(false)}>Cancel</button>
+    </span>
+  );
+}
+
+// Minimal CSV parser (quoted fields, commas and newlines inside quotes).
+function parseCSV(text) {
+  const rows = []; let row = [], cell = "", q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) { if (c === '"' && text[i + 1] === '"') { cell += '"'; i++; } else if (c === '"') q = false; else cell += c; }
+    else if (c === '"') q = true;
+    else if (c === ",") { row.push(cell); cell = ""; }
+    else if (c === "\n" || c === "\r") { if (c === "\r" && text[i + 1] === "\n") i++; row.push(cell); rows.push(row); row = []; cell = ""; }
+    else cell += c;
+  }
+  if (cell || row.length) { row.push(cell); rows.push(row); }
+  return rows.filter(r => r.some(x => x.trim()));
+}
+const OWNER_NAMES = { sam: "Sam", bear_umer: "Bear / Umer", shared: "Shared 50/50" };
+const COLS = { owner: ["owner"], cost: ["cost"], name: ["name", "card", "card name", "title"], set: ["set", "set name", "expansion"], grade: ["grade", "condition"], value: ["value", "price", "market", "market value"], qty: ["qty", "quantity", "count"], image: ["image", "photo", "image url", "img"], weight: ["weight"] };
+
+// Import CSV: spreadsheet → pool. Columns (any order): name, set, grade, value, qty, image, weight.
+function ImportPool({ tier, act }) {
+  const [rows, setRows] = useState(null);
+  const [err, setErr] = useState("");
+  async function onFile(e) {
+    const file = e.target.files?.[0]; e.target.value = ""; setErr(""); setRows(null);
+    if (!file) return;
+    const text = await file.text();
+    // IllestCollect pool export (JSON): only cards still in stock and not deleted.
+    if (/\.json$/i.test(file.name) || text.trim().startsWith("[")) {
+      let list;
+      try { list = JSON.parse(text); } catch { return setErr("That JSON file couldn’t be read."); }
+      if (!Array.isArray(list)) return setErr("Expected a list of cards.");
+      const live = list.filter(c => c && c.name && c.in_stock !== false && !c.deleted_at);
+      return setRows(live.map(c => ({
+        name: c.name, set: c.set || "", value: c.value ?? c.price ?? "", qty: 1, weight: 1,
+        grade: c.graded ? [c.gradingCo, c.grade].filter(Boolean).join(" ") : (c.grade || c.condition || "Raw"),
+        image: c.imgUrl || c.image || "", owner: c.owner || "", cost: c.cost ?? "",
+      })));
+    }
+    const table = parseCSV(text);
+    if (table.length < 2) return setErr("That file has no rows.");
+    const head = table[0].map(h => h.trim().toLowerCase());
+    const idx = Object.fromEntries(Object.entries(COLS).map(([k, names]) => [k, head.findIndex(h => names.includes(h))]));
+    if (idx.name < 0 || idx.value < 0) return setErr("Needs at least a “name” column and a “value” (or “price”) column.");
+    setRows(table.slice(1).map(r => Object.fromEntries(Object.entries(idx).map(([k, i]) => [k, i >= 0 ? (r[i] || "").trim().replace(/^\$/, "") : ""]))).filter(r => r.name));
+  }
+  const template = "data:text/csv;charset=utf-8," + encodeURIComponent("name,set,grade,value,qty,image,weight\nSon Goku SCR FB01-139,Awakened Pulse,PSA 10,120,1,,0.5\nVegeta SR FB02-061,Blazing Aura,Raw NM,6.50,3,,1\n");
+  return (
+    <div className="import-pool">
+      <label className="btn btn-small btn-ghost-dark">⬆ Import CSV / IllestCollect JSON into {tier.name}<input type="file" accept=".csv,text/csv,.json,application/json" onChange={onFile} hidden /></label>
+      <a className="small" href={template} download="pool-template.csv">Download template</a>
+      {rows && (
+        <span className="small">
+          {rows.length} card{rows.length === 1 ? "" : "s"} ({rows.reduce((s, r) => s + (Number(r.qty) || 1), 0)} copies, {money(rows.reduce((s, r) => s + Number(r.value || 0) * (Number(r.qty) || 1), 0))} total value) ready ·{" "}
+          <button className="btn btn-small" onClick={async () => { if (await act({ action: "import-pool", tier: tier.id, rows }, r => `Imported ${r.added} cards into ${tier.name}.`)) setRows(null); }}>Import</button>{" "}
+          <button className="link-button" onClick={() => setRows(null)}>Cancel</button>
+        </span>
+      )}
+      {err && <span className="error small">{err}</span>}
+    </div>
   );
 }

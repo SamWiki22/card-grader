@@ -1,6 +1,6 @@
 import { randomBytes } from "crypto";
 import { requireAdmin } from "../../../lib/auth";
-import { db } from "../../../lib/catalog";
+import { db, selectAll } from "../../../lib/catalog";
 import { listTiers, oddsFor, expectedValue, getBuybackRules } from "../../../lib/packs";
 import { TCG_SOURCES, marketCents } from "../../../lib/tcg";
 import { COMP_SOURCES } from "../../../lib/shared";
@@ -9,6 +9,16 @@ import { refreshPrices } from "../../../lib/prices";
 export const config = { api: { bodyParser: { sizeLimit: "4mb" } } };
 
 const cents = v => Math.round(Number(v) * 100);
+// Owner labels from other systems → our owner ids (anything else is kept as written).
+const ownerId = o => {
+  const s = String(o || "").trim().toLowerCase();
+  if (!s) return "";
+  if (s === "sam") return "sam";
+  if (/bear|umer/.test(s)) return "bear_umer";
+  if (/shared|50/.test(s)) return "shared";
+  return String(o).trim().slice(0, 40);
+};
+
 const intOrNull = v => (v === "" || v == null ? null : Math.max(0, Math.min(100, Math.round(Number(v)))));
 const TCG_COLS = "tcg_category_id,tcg_group_id,tcg_product_id,tcg_subtype,price_source,price_updated_at,comp_cents,comp_source,comp_date,comp_url";
 
@@ -23,7 +33,7 @@ export default async function handler(req, res) {
     const SUB_COLS = "id,user_id,game,name,set_name,card_number,grade,asking_cents,note,tcg_product_id,market_cents,value_cents,offer_cents,admin_note,status,card_id,created_at,updated_at";
     const [tiers, cards, ships, rules, items, openSubs, closedSubs] = await Promise.all([
       listTiers({ includeInactive: true }),
-      db.from("pack_cards").select(`id,tier_id,name,set_name,grade,market_value_cents,weight,buyback_percent,status,owner_id,created_at,${TCG_COLS}`).order("created_at", { ascending: false }),
+      selectAll(() => db.from("pack_cards").select(`id,tier_id,name,set_name,grade,market_value_cents,weight,buyback_percent,status,owner_id,owner,cost_cents,created_at,${TCG_COLS}`).order("created_at", { ascending: false }).order("id")),
       db.from("shipments").select("*").order("created_at", { ascending: false }).limit(100),
       getBuybackRules(),
       db.from("items").select(`id,name,set_name,game,condition,quantity,price,${TCG_COLS}`).eq("type", "single").order("name"),
@@ -58,6 +68,73 @@ export default async function handler(req, res) {
         active: !!b.active,
       }).eq("id", String(b.id));
       break;
+
+    // Move copies of a store item (singles from inventory) into a pack pool, one pool card per copy.
+    case "move-to-pool": {
+      const qty = Math.max(1, Math.min(50, Math.round(Number(b.qty) || 1)));
+      const { data: tierRow } = await db.from("pack_tiers").select("id").eq("id", String(b.tier || "")).maybeSingle();
+      if (!tierRow) return res.status(400).json({ error: "Pick a pool." });
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const { data: item } = await db.from("items").select("*").eq("id", String(b.id)).maybeSingle();
+        if (!item) return res.status(404).json({ error: "Item not found." });
+        if (item.quantity < qty) return res.status(409).json({ error: `Only ${item.quantity} in stock.` });
+        // Compare-and-set so a sale at the same moment isn't lost.
+        const { data: took } = await db.from("items").update({ quantity: item.quantity - qty, updated_at: new Date().toISOString() })
+          .eq("id", item.id).eq("quantity", item.quantity).select("id");
+        if (!took?.length) continue;
+        const value = b.value !== undefined && b.value !== "" ? cents(b.value) : Math.round(Number(item.price) * 100);
+        const grade = String(b.grade || (item.condition ? (/^(psa|bgs|cgc|tag|sgc)/i.test(item.condition) ? item.condition : `Raw ${item.condition}`) : "")).slice(0, 40);
+        const rows = Array.from({ length: qty }, () => ({
+          id: randomBytes(8).toString("hex"),
+          tier_id: tierRow.id,
+          name: String(item.name).slice(0, 120),
+          set_name: String(item.set_name || "").slice(0, 120),
+          grade,
+          market_value_cents: value,
+          weight: Number(b.weight) > 0 ? Number(b.weight) : 1,
+          image: item.photo || null,
+          tcg_category_id: item.tcg_category_id ?? null, tcg_group_id: item.tcg_group_id ?? null,
+          tcg_product_id: item.tcg_product_id ?? null, tcg_subtype: item.tcg_subtype ?? null,
+          price_source: item.price_source === "tcgplayer" ? "tcgplayer" : "manual",
+          owner: item.owner || "",
+          cost_cents: Math.round(Number(item.cost || 0) * 100),
+        }));
+        const { error } = await db.from("pack_cards").insert(rows);
+        if (error) {
+          // Put the stock back so nothing goes missing.
+          await db.from("items").update({ quantity: item.quantity }).eq("id", item.id).eq("quantity", item.quantity - qty);
+          console.error(error);
+          return res.status(500).json({ error: "Couldn’t add to the pool — stock unchanged." });
+        }
+        return res.json({ ok: true, moved: qty });
+      }
+      return res.status(409).json({ error: "Stock changed at the same moment — try again." });
+    }
+
+    // Bulk import cards into a pool from a spreadsheet (CSV parsed in the browser).
+    case "import-pool": {
+      const { data: tierRow } = await db.from("pack_tiers").select("id").eq("id", String(b.tier || "")).maybeSingle();
+      if (!tierRow) return res.status(400).json({ error: "Pick a pool." });
+      const rows = [];
+      for (const r of Array.isArray(b.rows) ? b.rows.slice(0, 1000) : []) {
+        const name = String(r.name || "").trim().slice(0, 120);
+        const value = cents(r.value);
+        if (!name || !(value >= 0)) continue;
+        const copies = Math.max(1, Math.min(50, Math.round(Number(r.qty) || 1)));
+        for (let i = 0; i < copies && rows.length < 2000; i++) rows.push({
+          id: randomBytes(8).toString("hex"), tier_id: tierRow.id, name,
+          set_name: String(r.set || "").slice(0, 120), grade: String(r.grade || "").slice(0, 40),
+          market_value_cents: value, weight: Number(r.weight) > 0 ? Number(r.weight) : 1,
+          image: /^https:\/\//.test(String(r.image || "")) ? String(r.image).slice(0, 500) : null,
+          owner: ownerId(r.owner),
+          cost_cents: Math.max(0, cents(r.cost) || 0),
+        });
+      }
+      if (!rows.length) return res.status(400).json({ error: "No usable rows — each needs at least a name and a value." });
+      const { error } = await db.from("pack_cards").insert(rows);
+      if (error) { console.error(error); return res.status(500).json({ error: error.message }); }
+      return res.json({ ok: true, added: rows.length });
+    }
 
     case "add-card": {
       if (!b.tier_id || !b.name || !(Number(b.value) >= 0)) return res.status(400).json({ error: "Tier, name and value are required." });
