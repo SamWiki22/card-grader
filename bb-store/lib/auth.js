@@ -35,8 +35,10 @@ export function clearSession(res) {
   res.setHeader("Set-Cookie", [cookie(AT, "", 0), cookie(RT, "", 0)]);
 }
 
-export async function sendCode(email) {
-  const { error } = await authClient().auth.signInWithOtp({ email, options: { shouldCreateUser: true } });
+// Emails a sign-in link (Supabase's default email) — or a 6-digit code if the
+// email template includes {{ .Token }}. The link lands on /auth/callback.
+export async function sendCode(email, redirectTo) {
+  const { error } = await authClient().auth.signInWithOtp({ email, options: { shouldCreateUser: true, emailRedirectTo: redirectTo } });
   if (error) throw error;
 }
 
@@ -44,6 +46,16 @@ export async function verifyCode(email, token) {
   const { data, error } = await authClient().auth.verifyOtp({ email, token, type: "email" });
   if (error || !data.session) throw error || new Error("No session");
   return data;
+}
+
+// Signs in from the tokens a sign-in link hands to /auth/callback.
+export async function sessionFromTokens(access_token, refresh_token) {
+  const client = authClient();
+  const { data } = await client.auth.getUser(access_token);
+  if (!data?.user) throw new Error("Invalid sign-in link");
+  const { data: s } = await client.auth.refreshSession({ refresh_token });
+  if (!s?.session || s.user?.id !== data.user.id) throw new Error("Invalid sign-in link");
+  return { session: s.session, user: s.user };
 }
 
 // Returns the signed-in user (refreshing an expired access token when it can), or null.
