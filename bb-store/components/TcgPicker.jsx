@@ -8,14 +8,14 @@ const readLast = () => { try { return JSON.parse(localStorage.getItem(LAST)) || 
 // Find a card on TCGplayer: pick catalog (game) → set → search → printing.
 // Calls onPick({ categoryId, groupId, productId, subType, name, setName, number, imageUrl, cents, autoPrice, sealed }).
 // With `remember`, it reopens on the last game/set used, so entering a stack from one set is just search → tap.
-export default function TcgPicker({ sources = TCG_SOURCES, initialGame, onPick, onClose, title = "Find on TCGplayer", showSync = true, allowSealed = false, remember = false }) {
+export default function TcgPicker({ sources = TCG_SOURCES, initialGame, onPick, onClose, title = "Find on TCGplayer", showSync = true, allowSealed = false, remember = false, initialQuery = "", initialSetFilter = "" }) {
   const last = remember ? readLast() : {};
   const [game, setGame] = useState((sources.find(s => s.id === last.source) || sources.find(s => s.game === initialGame) || sources[0]).id);
   const [sealed, setSealed] = useState(allowSealed && !!last.sealed);
   const [sets, setSets] = useState([]);
-  const [setFilter, setSetFilter] = useState("");
+  const [setFilter, setSetFilter] = useState(initialSetFilter);
   const [group, setGroup] = useState("");
-  const [q, setQ] = useState("");
+  const [q, setQ] = useState(initialQuery);
   const [cards, setCards] = useState(null);
   const [autoPrice, setAutoPrice] = useState(true);
   const [busy, setBusy] = useState(false);

@@ -8,6 +8,18 @@ const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_K
 
 export const db = url && key ? createClient(url, key, { auth: { persistSession: false } }) : null;
 
+// Supabase returns at most 1,000 rows per request; this pages through all of them.
+// `build` returns a fresh query each time, e.g. () => db.from("items").select("id").order("id").
+export async function selectAll(build, pageSize = 1000) {
+  const out = [];
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await build().range(from, from + pageSize - 1);
+    if (error) return { data: null, error };
+    out.push(...data);
+    if (data.length < pageSize) return { data: out, error: null };
+  }
+}
+
 const GAME_KEYWORDS = {
   pokemon: ["pokemon", "pokémon"], mtg: ["magic", "mtg"], onepiece: ["one piece"],
   dbs: ["dragon ball", "dragonball"], gundam: ["gundam"], unionarena: ["union arena"],

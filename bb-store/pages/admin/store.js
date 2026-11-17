@@ -13,6 +13,24 @@ const CONDITIONS = ["NM", "LP", "MP", "HP", "DMG", "PSA 10", "PSA 9", "BGS 9.5",
 const PREFS = "bb-add-prefs"; // remembered per browser: game, owner, condition
 const photoUrl = it => `/api/admin/item-photo/${encodeURIComponent(it.id)}?v=${it.updated_at ? new Date(it.updated_at).getTime() : 0}`;
 
+// Shrink a photo (File or data URL) to `max` px JPEG. Browsers apply the phone's
+// rotation flag when drawing, so the result comes out upright.
+export function shrink(src, max = 900, quality = 0.85) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const s = Math.min(1, max / Math.max(img.width, img.height));
+      const c = document.createElement("canvas");
+      c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+      if (typeof src !== "string") URL.revokeObjectURL(img.src);
+      resolve(c.toDataURL("image/jpeg", quality));
+    };
+    img.onerror = () => reject(new Error("That file isn’t a photo we can read."));
+    img.src = typeof src === "string" ? src : URL.createObjectURL(src);
+  });
+}
+
 // Shrink a photo to max 900px JPEG. Browsers apply the phone's rotation flag when
 // drawing, so the saved photo comes out upright.
 function compress(file) {
@@ -64,6 +82,7 @@ export default function Inventory() {
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState("");
   const [adding, setAdding] = useState(false);
+  const [recording, setRecording] = useState(false);
 
   const load = useCallback(async () => {
     const r = await fetch("/api/admin/items");
@@ -138,7 +157,7 @@ export default function Inventory() {
       <section className="wrap section admin">
         <div className="admin-head">
           <h1 className="page-title">Inventory</h1>
-          {me.user?.admin && <Link href="/admin/packs" className="btn btn-small btn-ghost-dark">Packs admin →</Link>}
+          {me.user?.admin && <span className="admin-links"><Link href="/admin/sales" className="btn btn-small btn-ghost-dark">Sales →</Link> <Link href="/admin/packs" className="btn btn-small btn-ghost-dark">Packs admin →</Link></span>}
         </div>
         <div className="inv-stats">
           <div><span className="muted small">In stock</span><b>{totals.units}</b></div>
@@ -146,9 +165,14 @@ export default function Inventory() {
           <div><span className="muted small">Cost</span><b>{money(totals.cost)}</b></div>
         </div>
 
-        {adding
-          ? <AddPanel onClose={() => setAdding(false)} onAdded={async (name, qty) => { await load(); setMsg(`Added ${qty} × ${name}.`); }} />
-          : <button className="btn inv-add-btn" onClick={() => { setAdding(true); setMsg(""); }}>+ Add cards or sealed</button>}
+        {adding && <AddPanel onClose={() => setAdding(false)} onAdded={async (name, qty) => { await load(); setMsg(`Added ${qty} × ${name}.`); }} />}
+        {recording && <RecordSales items={items} onClose={() => setRecording(false)} onDone={async n => { await load(); setMsg(`Recorded ${n} sale${n === 1 ? "" : "s"}.`); }} />}
+        {!adding && !recording && (
+          <div className="inv-top-actions">
+            <button className="btn" onClick={() => { setAdding(true); setMsg(""); }}>+ Add cards or sealed</button>
+            <button className="btn btn-ghost-dark" onClick={() => { setRecording(true); setMsg(""); }}>📷 Record sales</button>
+          </div>
+        )}
 
         {msg && <p className={msg.startsWith("Error") ? "error" : "banner light"}>{msg}</p>}
 
@@ -187,7 +211,42 @@ function AddPanel({ onClose, onAdded }) {
   const [picker, setPicker] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [reading, setReading] = useState(false);
+  const [found, setFound] = useState([]); // everything the photo showed (more than one card → pick which)
+  const [hint, setHint] = useState({ q: "", set: "" });
   const bind = k => ({ value: f[k] ?? "", onChange: e => setF({ ...f, [k]: e.target.value }) });
+
+  function useFound(it, photo) {
+    setF(cur => ({
+      ...cur,
+      type: it.type, game: it.game,
+      name: it.number && !it.name.includes(it.number) ? `${it.name} ${it.number}` : it.name,
+      set_name: it.set,
+      condition: it.type === "single" ? (it.condition || cur.condition || "NM") : "",
+      quantity: it.quantity || 1,
+      price: it.price ? it.price.toFixed(2) : cur.price,
+      notes: it.notes,
+      photo: photo ?? cur.photo,
+      tcg: null,
+    }));
+    setHint({ q: it.number || it.name, set: it.set });
+  }
+
+  // 📷 Snap to add: read the photo, fill the form, keep the photo as the item's picture.
+  async function onSnap(e) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setReading(true); setError(""); setFound([]);
+    try {
+      const [forAi, photo] = await Promise.all([shrink(file, 1400), shrink(file, 900)]);
+      const r = await postJSON("/api/admin/read-photo", { image: forAi, mode: "add" });
+      if (!r.items.length) throw new Error("Couldn’t find a card in that photo — try again closer up.");
+      setFound(r.items.map(it => ({ ...it, photo })));
+      useFound(r.items[0], photo);
+    } catch (err) { setError(err.message); }
+    setReading(false);
+  }
 
   function fromTcg(t) {
     setPicker(false);
@@ -199,7 +258,7 @@ function AddPanel({ onClose, onAdded }) {
       name: t.sealed || !t.number ? t.name : `${t.name} ${t.number}`.replace(/ - (\S+) (\1)$/, " $1"),
       set_name: t.setName,
       price: (t.cents / 100).toFixed(2),
-      photo: t.imageUrl,
+      photo: cur.photo && cur.photo.startsWith("data:") ? cur.photo : t.imageUrl, // keep a real photo you just took
       tcg: t,
     }));
   }
@@ -214,8 +273,10 @@ function AddPanel({ onClose, onAdded }) {
       await postJSON("/api/admin/items", { action: "create", fields: f, tcg: f.tcg });
       try { localStorage.setItem(PREFS, JSON.stringify({ game: f.game, owner: f.owner, condition: f.type === "single" ? f.condition : prefs.condition })); } catch {}
       await onAdded(f.name, f.quantity);
+      const rest = found.slice(1);
       setF({ ...blank, game: f.game, owner: f.owner, condition: f.type === "single" ? f.condition : blank.condition });
-      setPicker(true); // straight to the next card from the same set
+      if (rest.length) { setFound(rest); useFound(rest[0], rest[0].photo); } // next card from the same photo
+      else { setFound([]); setHint({ q: "", set: "" }); if (f.tcg) setPicker(true); } // next card from the same set
     } catch (err) { setError(err.message); }
     setBusy(false);
   }
@@ -228,9 +289,11 @@ function AddPanel({ onClose, onAdded }) {
         <button type="button" className="link-button" onClick={onClose}>Close</button>
       </div>
       <div className="add-panel-top">
-        <button type="button" className="btn" onClick={() => setPicker(true)}>🔎 Find on TCGplayer</button>
-        <span className="muted small">{f.tcg ? `Matched TCGplayer #${f.tcg.productId} · ${f.tcg.subType}` : "…or type it in below and add your own photo."}</span>
+        <label className="btn snap-btn">{reading ? "Reading photo…" : "📷 Snap to add"}<input type="file" accept="image/*" capture="environment" onChange={onSnap} hidden disabled={reading} /></label>
+        <button type="button" className="btn btn-ghost-dark" onClick={() => setPicker(true)}>🔎 Find on TCGplayer</button>
+        <span className="muted small">{f.tcg ? `Matched TCGplayer #${f.tcg.productId} · ${f.tcg.subType}` : hint.q ? "Read from your photo — tap Find on TCGplayer to match the price, or check the details and add." : "Snap a photo, search TCGplayer, or type it in below."}</span>
       </div>
+      {found.length > 1 && <p className="small">This photo has {found.length} items — adding <b>{found[0].name}</b> first, then the rest one by one.</p>}
       <div className="add-grid">
         <label className={`add-photo${f.photo ? " has" : ""}`}>
           {f.photo ? <img src={f.photo} alt="" /> : <span>📷 Photo<br /><small>optional</small></span>}
@@ -261,7 +324,7 @@ function AddPanel({ onClose, onAdded }) {
       {error && <p className="error">{error}</p>}
       <button className="btn btn-block" disabled={busy}>{busy ? "Adding…" : `Add ${f.quantity || 0} to inventory`}</button>
     </form>
-    {picker && <TcgPicker remember allowSealed initialGame={f.game} title="Find on TCGplayer" onPick={fromTcg} onClose={() => setPicker(false)} />}
+    {picker && <TcgPicker remember allowSealed initialGame={f.game} initialQuery={hint.q} initialSetFilter={hint.set} title="Find on TCGplayer" onPick={fromTcg} onClose={() => setPicker(false)} />}
     </>
   );
 }
@@ -318,5 +381,108 @@ function ItemCard({ it, selected, onToggle, busy, onRotate, act }) {
         </div>
       </div>
     </article>
+  );
+}
+
+const SOLD_BY = "bb-sold-by";
+const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+
+// 📷 Record sales: upload photos / group-text screenshots of what sold → the AI reads each item
+// and suggests the matching inventory card → check, adjust, and record them all at once.
+function RecordSales({ items, onClose, onDone }) {
+  const [rows, setRows] = useState([]); // { key, found, candidates, itemId, qty, price, thumb, search }
+  const [reading, setReading] = useState(0);
+  const [soldBy, setSoldBy] = useState(() => { try { return localStorage.getItem(SOLD_BY) || ""; } catch { return ""; } });
+  const [date, setDate] = useState(today());
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const byId = useMemo(() => Object.fromEntries(items.map(it => [it.id, it])), [items]);
+
+  async function onPhotos(e) {
+    const files = [...(e.target.files || [])];
+    e.target.value = "";
+    setError("");
+    for (const file of files) {
+      setReading(n => n + 1);
+      try {
+        const [forAi, thumb] = await Promise.all([shrink(file, 1600), shrink(file, 260, 0.6)]);
+        const r = await postJSON("/api/admin/read-photo", { image: forAi, mode: "sold" });
+        if (!r.matches.length) setError(prev => `${prev ? prev + " " : ""}No sold items were found in one of the photos.`);
+        setRows(cur => [...cur, ...r.matches.map((m, i) => {
+          const best = m.confident ? m.candidates[0] : null; // weak matches wait for a person to pick
+          return { key: `${Date.now()}-${i}-${Math.random()}`, found: m.found, candidates: m.candidates, itemId: best?.id || "", qty: m.found.quantity || 1, price: m.found.price ?? best?.price ?? "", thumb, search: "" };
+        })]);
+      } catch (err) { setError(err.message); }
+      setReading(n => n - 1);
+    }
+  }
+
+  const set = (key, patch) => setRows(rs => rs.map(r => (r.key === key ? { ...r, ...patch } : r)));
+  const ready = rows.filter(r => r.itemId);
+
+  async function record() {
+    setBusy(true); setError("");
+    try { localStorage.setItem(SOLD_BY, soldBy); } catch {}
+    const soldAt = date === today() ? null : new Date(`${date}T12:00:00`).toISOString();
+    let done = 0;
+    const failed = [];
+    for (const r of ready) {
+      try {
+        await postJSON("/api/admin/items", { action: "sold", id: r.itemId, qty: r.qty, price: r.price, soldBy, soldAt, thumbnail: r.thumb });
+        done++;
+        setRows(rs => rs.filter(x => x.key !== r.key));
+      } catch (err) { failed.push(`${byId[r.itemId]?.name || r.found.name}: ${err.message}`); }
+    }
+    setBusy(false);
+    if (done) await onDone(done);
+    if (failed.length) setError(failed.join(" · ")); else if (done) onClose();
+  }
+
+  return (
+    <div className="add-panel">
+      <div className="add-panel-head"><b>Record sales from photos</b><button type="button" className="link-button" onClick={onClose}>Close</button></div>
+      <p className="muted small">Upload photos of what sold, or screenshots of the group text. Each item is matched to inventory — check the matches, fix anything off, then record.</p>
+      <div className="add-panel-top">
+        <label className="btn snap-btn">{reading ? `Reading ${reading} photo${reading === 1 ? "" : "s"}…` : "📷 Add photos / screenshots"}<input type="file" accept="image/*" multiple onChange={onPhotos} hidden /></label>
+      </div>
+      {rows.length > 0 && (
+        <ul className="sale-rows">
+          {rows.map(r => {
+            const terms = r.search.toLowerCase().split(/\s+/).filter(Boolean);
+            const searchHits = terms.length ? items.filter(it => it.quantity > 0 && terms.every(t => `${it.name} ${it.set_name}`.toLowerCase().includes(t))).slice(0, 8) : [];
+            const options = [...r.candidates, ...searchHits.filter(h => !r.candidates.some(c => c.id === h.id))];
+            const it = byId[r.itemId];
+            return (
+              <li key={r.key} className={r.itemId ? "" : "unmatched"}>
+                <img src={r.thumb} alt="" />
+                <div className="sale-row-body">
+                  <div className="small muted">Photo says: <b>{[r.found.name, r.found.number, r.found.set].filter(Boolean).join(" · ")}</b>{r.found.price ? ` · $${r.found.price}` : ""}{r.found.notes ? ` · ${r.found.notes}` : ""}</div>
+                  <select className="input input-sm" value={r.itemId} aria-label="Inventory item" onChange={e => { const c = options.find(o => o.id === e.target.value); set(r.key, { itemId: e.target.value, price: r.found.price ?? c?.price ?? r.price }); }}>
+                    <option value="">{options.length ? "— pick the card that sold (or skip) —" : "No match — search below"}</option>
+                    {options.map(o => <option key={o.id} value={o.id}>{o.name}{o.set_name ? ` · ${o.set_name}` : ""}{o.condition ? ` · ${o.condition}` : ""} · {o.quantity} in stock · {money(o.price)}{o.owner ? ` · ${OWNER_LABEL[o.owner] || ""}` : ""}</option>)}
+                  </select>
+                  <input className="input input-sm" placeholder="Search inventory…" value={r.search} onChange={e => set(r.key, { search: e.target.value })} />
+                  <div className="add-row">
+                    <label className="add-num">Qty<input className="input input-sm" type="number" min="1" max={it?.quantity || 99} value={r.qty} onChange={e => set(r.key, { qty: e.target.value })} /></label>
+                    <label className="add-num">Sold for $ (each)<input className="input input-sm" type="number" step="0.01" min="0" value={r.price} onChange={e => set(r.key, { price: e.target.value })} /></label>
+                    <button type="button" className="link-button" onClick={() => setRows(rs => rs.filter(x => x.key !== r.key))}>Remove</button>
+                  </div>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {rows.length > 0 && (
+        <>
+          <div className="add-row">
+            <label className="add-num">Sold by<input className="input" placeholder="Your name" value={soldBy} onChange={e => setSoldBy(e.target.value)} /></label>
+            <label className="add-num">Date sold<input className="input" type="date" max={today()} value={date} onChange={e => setDate(e.target.value)} /></label>
+          </div>
+          <button className="btn btn-block" disabled={busy || !ready.length} onClick={record}>{busy ? "Recording…" : `Record ${ready.length} sale${ready.length === 1 ? "" : "s"} · ${money(ready.reduce((s, r) => s + Number(r.price || 0) * Number(r.qty || 1), 0))}`}</button>
+        </>
+      )}
+      {error && <p className="error">{error}</p>}
+    </div>
   );
 }

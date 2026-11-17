@@ -1,7 +1,7 @@
 import { randomBytes } from "crypto";
 import { requireStaff } from "../../../lib/auth";
 import { marketCents } from "../../../lib/tcg";
-import { db } from "../../../lib/catalog";
+import { db, selectAll } from "../../../lib/catalog";
 
 // Photos come in as data URLs after rotating in the browser.
 export const config = { api: { bodyParser: { sizeLimit: "6mb" } } };
@@ -20,7 +20,8 @@ export default async function handler(req, res) {
   if (!staff) return;
 
   if (req.method === "GET") {
-    const { data, error } = await db.from("items").select(COLS).order("created_at", { ascending: false }).order("id"); // id breaks ties so cards never jump around
+    // id breaks ties so cards never jump around; selectAll pages past Supabase's 1,000-row limit.
+    const { data, error } = await selectAll(() => db.from("items").select(COLS).order("created_at", { ascending: false }).order("id"));
     if (error) { console.error(error); return res.status(500).json({ error: error.message }); }
     return res.json({ items: data });
   }
@@ -98,18 +99,28 @@ export default async function handler(req, res) {
         const { data: item } = await db.from("items").select("*").eq("id", id).maybeSingle();
         if (!item) return res.status(404).json({ error: "Item not found." });
         if (item.quantity < qty) return res.status(409).json({ error: `Only ${item.quantity} in stock.` });
-        const price = b.price !== undefined && b.price !== "" ? Number(b.price) : Number(item.price);
+        const price = b.price !== undefined && b.price !== "" && b.price !== null ? Math.max(0, Number(b.price) || 0) : Number(item.price);
+        // Sales recorded later (e.g. from a group-text photo) can carry the day they happened.
+        const soldAt = b.soldAt && !Number.isNaN(Date.parse(b.soldAt)) && Date.parse(b.soldAt) <= Date.now() + 864e5 ? new Date(b.soldAt).toISOString() : null;
+        const thumb = typeof b.thumbnail === "string" && /^data:image\/jpeg;base64,/.test(b.thumbnail) && b.thumbnail.length <= 120_000 ? b.thumbnail : null;
         // Compare-and-set so a sale rung up in BB Inventory at the same moment isn't lost.
         const { data: updated } = await db.from("items").update({ quantity: item.quantity - qty, updated_at: now() })
           .eq("id", id).eq("quantity", item.quantity).select("id");
         if (!updated?.length) continue;
-        await db.from("sales").insert({
+        const { error: saleError } = await db.from("sales").insert({
           id: Date.now().toString(36) + randomBytes(3).toString("hex"),
           item_id: id, item_name: item.name || "", item_set: item.set_name || "", item_type: item.type || "",
           owner: item.owner || "", item_cost: Number(item.cost) || 0,
           quantity: qty, price, total: Math.round(price * qty * 100) / 100,
-          sold_by: String(b.soldBy || "Store admin").slice(0, 60), thumbnail: null,
+          sold_by: String(b.soldBy || staff.email.split("@")[0]).slice(0, 60), thumbnail: thumb,
+          ...(soldAt ? { created_at: soldAt } : {}),
         });
+        if (saleError) {
+          // Couldn't log the sale — put the stock back so inventory and sales stay in step.
+          console.error(saleError);
+          await db.from("items").update({ quantity: item.quantity, updated_at: now() }).eq("id", id).eq("quantity", item.quantity - qty);
+          return res.status(500).json({ error: "Couldn’t save the sale — stock was left unchanged. Try again." });
+        }
         return res.json({ ok: true, quantity: item.quantity - qty });
       }
       return res.status(409).json({ error: "Stock changed at the same moment — try again." });
