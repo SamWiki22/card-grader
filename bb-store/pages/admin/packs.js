@@ -130,7 +130,7 @@ export default function AdminPacks() {
               <table className="table">
                 <thead><tr><th>Card</th><th>Grade</th><th>Value</th><th>Buyback</th><th>Weight</th><th>Chance</th><th>TCGplayer</th><th>Last sold</th><th>Status</th><th /></tr></thead>
                 <tbody>
-                  {cards.map(c => <CardRow key={c.id} c={c} rules={data.rules} total={cards.filter(x => x.status === "available").reduce((s, x) => s + Number(x.weight), 0)}
+                  {cards.map(c => <CardRow key={c.id} c={c} tiers={data.tiers} rules={data.rules} total={cards.filter(x => x.status === "available").reduce((s, x) => s + Number(x.weight), 0)}
                     onSave={b => act({ action: "update-card", id: c.id, ...b }, "Card updated.")}
                     onLink={() => pick(tier.game, t => act({ action: "link-tcg", target: "pack", id: c.id, tcg: t }, `Linked to TCGplayer${t.autoPrice ? " — price now follows market" : ""}.`))}
                     onUnlink={() => act({ action: "unlink-tcg", target: "pack", id: c.id }, "TCGplayer link removed; price is manual.")}
@@ -292,7 +292,7 @@ function AddCard({ tier, games, pick, onAdd }) {
   );
 }
 
-function CardRow({ c, rules, total, onSave, onLink, onUnlink, onComp }) {
+function CardRow({ c, tiers, rules, total, onSave, onLink, onUnlink, onComp }) {
   const [value, setValue] = useState((c.market_value_cents / 100).toFixed(2));
   const [weight, setWeight] = useState(String(c.weight));
   const [bb, setBb] = useState(c.buyback_percent == null ? "" : String(c.buyback_percent));
@@ -315,6 +315,13 @@ function CardRow({ c, rules, total, onSave, onLink, onUnlink, onComp }) {
         {dirty && <button className="btn btn-small" onClick={() => onSave({ ...(c.price_source !== "manual" ? {} : { value }), weight, buyback_percent: bb })}>Save</button>}{" "}
         {c.status === "available" && <button className="link-button" onClick={() => onSave({ status: "retired" })}>Remove</button>}
         {c.status === "retired" && <button className="link-button" onClick={() => onSave({ status: "available" })}>Restore</button>}
+        {/* Move this card to another pool of the same game (live tiers first). */}
+        <select className="input input-sm move-select" value="" aria-label="Move to pool" onChange={e => e.target.value && onSave({ tier_id: e.target.value })}>
+          <option value="">Move to…</option>
+          {tiers.filter(t => t.game === tiers.find(x => x.id === c.tier_id)?.game && t.id !== c.tier_id)
+            .sort((a, b) => Number(b.active) - Number(a.active) || a.price_cents - b.price_cents)
+            .map(t => <option key={t.id} value={t.id}>{t.name} · {centsToMoney(t.price_cents)}{t.active ? "" : " (hidden)"}</option>)}
+        </select>
       </td>
     </tr>
   );
