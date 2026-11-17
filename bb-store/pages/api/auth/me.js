@@ -1,4 +1,4 @@
-import { getUser, isAdmin, packsReady } from "../../../lib/auth";
+import { getUser, isAdmin, isStaff, packsReady } from "../../../lib/auth";
 import { getBalance } from "../../../lib/packs";
 import { db } from "../../../lib/catalog";
 
@@ -11,5 +11,5 @@ export default async function handler(req, res) {
     getBalance(user.id, user.email),
     db.from("submissions").select("id").eq("user_id", user.id).eq("status", "offered"),
   ]);
-  res.json({ ready: true, user: { email: user.email, admin: isAdmin(user) }, balance_cents: balance, pending_offers: (offers.data || []).length });
+  res.json({ ready: true, user: { email: user.email, admin: isAdmin(user), staff: isStaff(user) }, balance_cents: balance, pending_offers: (offers.data || []).length });
 }

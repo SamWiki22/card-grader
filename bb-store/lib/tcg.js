@@ -52,13 +52,13 @@ export async function setPrices(categoryId, groupId) {
 }
 
 // Single cards in a set matching a search, each with its price per printing.
-export async function searchCards(sourceId, groupId, q) {
+export async function searchCards(sourceId, groupId, q, { sealed = false } = {}) {
   const cat = sourceCat(sourceId);
   if (!cat || !groupId) return [];
   const [products, prices] = await Promise.all([get(`/${cat}/${groupId}/products`, 12 * HOUR), setPrices(cat, groupId)]);
   const terms = String(q || "").toLowerCase().split(/\s+/).filter(Boolean);
   return products
-    .filter(p => ext(p, "Number")) // singles have a card number; sealed product doesn't
+    .filter(p => (sealed ? !ext(p, "Number") : !!ext(p, "Number"))) // singles have a card number; sealed product doesn't
     .filter(p => terms.every(t => `${p.name} ${ext(p, "Number")}`.toLowerCase().includes(t)))
     .slice(0, 60)
     .map(p => ({

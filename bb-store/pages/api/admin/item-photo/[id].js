@@ -1,10 +1,10 @@
-import { requireAdmin } from "../../../../lib/auth";
+import { requireStaff } from "../../../../lib/auth";
 import { db } from "../../../../lib/catalog";
 
 // An item's photo for the admin editor — any item, listed or not, never cached.
 export default async function handler(req, res) {
-  const admin = await requireAdmin(req, res);
-  if (!admin) return;
+  const staff = await requireStaff(req, res);
+  if (!staff) return;
   const { data } = await db.from("items").select("photo").eq("id", String(req.query.id)).maybeSingle();
   const photo = data?.photo || "";
   res.setHeader("Cache-Control", "no-store");

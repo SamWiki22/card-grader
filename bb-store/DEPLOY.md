@@ -87,6 +87,18 @@ Players submit a card from **Sell** with photos, grade and an optional TCGplayer
 4. When it arrives and matches the photos, pick the pool and click **Card arrived — pay**. The player is credited
    and the card joins the pool with their photo. If it doesn't match, click **Card not as described**.
 
+### Adding inventory (staff)
+Inventory lives at `/admin/store` (the **Admin** / **Inventory** link in the header).
+- Give helpers inventory-only access with `STAFF_EMAILS` in Vercel (comma-separated). They can add, edit,
+  mark sold and delete items, but can't touch balances, payouts, buyback rates or pack settings.
+- **+ Add cards or sealed** → **Find on TCGplayer** → pick the game and set once, search, tap the printing,
+  set Qty, Condition and Owner → **Add**. The picker reopens on the same set for the next card.
+- Not on TCGplayer? Type the name and set, add your own photo, and enter the price by hand.
+
+### Retiring the old BB Inventory app
+Once you don't need it, delete its project in Vercel, then run `supabase/lock-down.sql` in the Supabase SQL Editor.
+That closes the old app's open access to your inventory tables; the website keeps working.
+
 ## Step 6 — Your own domain (optional)
 1. In Vercel, open the project, go to **Settings → Domains**, and add e.g. `beardedbeartcg.com`.
 2. Vercel shows one or two DNS records. Add them where you bought the domain (GoDaddy, Namecheap, etc.).
