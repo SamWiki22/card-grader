@@ -17,7 +17,7 @@ export default function Home({ singles, sealed, games, info, packs, rules }) {
         <div className="wrap hero-row">
           <div className="hero-copy">
             <p className="eyebrow">Pokémon · Magic · Dragon Ball · One Piece</p>
-            <h1>Cards worth growling about.</h1>
+            <h1 className="hero-title"><span className="ht-top">Cards worth</span>{" "}<span className="ht-big" data-text="Growling">Growling</span>{" "}<span className="ht-end">about.</span></h1>
             <p className="lead">Shop singles and sealed, rip virtual packs for real cards, or sell us your cards for credit — all in one den.</p>
             <div className="paths">
               <Link href="/shop" className="path">

@@ -155,7 +155,7 @@ code { font-family: var(--mono); font-size: .9em; }
 }
 @keyframes aurora { to { transform: translate3d(-4%, 3%, 0) scale(1.08); } }
 .hero-row { position: relative; display: grid; grid-template-columns: 1fr; gap: 20px; text-align: center; padding-top: 32px; padding-bottom: 40px;
-  background: radial-gradient(circle 170px at 50% 107px, rgba(79,195,182,.32), rgba(224,176,74,.08) 60%, transparent 100%); }
+  background: radial-gradient(circle 150px at 50% 82px, rgba(79,195,182,.32), rgba(224,176,74,.08) 60%, transparent 100%); }
 .eyebrow {
   display: inline-flex; align-items: center; gap: 8px; margin: 0 0 14px; padding: 6px 12px; border-radius: 999px;
   font-family: var(--mono); text-transform: uppercase; letter-spacing: .12em; font-size: 11px; font-weight: 600; color: var(--teal-hi);
@@ -167,6 +167,35 @@ code { font-family: var(--mono); font-size: .9em; }
   font-size: clamp(38px, 10vw, 76px); line-height: 1; letter-spacing: -.035em;
   background: linear-gradient(180deg, #fff 30%, #a9bbd6); -webkit-background-clip: text; background-clip: text; color: transparent;
 }
+/* Headline: small "Cards worth", huge holo-foil "GROWLING" with claw marks, outlined "about." */
+.hero h1.hero-title { background: none; color: var(--text); line-height: .92; text-transform: uppercase; letter-spacing: -.03em; }
+.hero-title > span { display: block; }
+.hero .eyebrow { max-width: 100%; }
+@media (max-width: 640px) { .hero .eyebrow { font-size: 10px; letter-spacing: .06em; padding: 6px 10px; } .hero-row { padding-top: 24px; } }
+.ht-top { font-size: clamp(26px, 7.4vw, 50px); color: var(--text); letter-spacing: -.01em; }
+.ht-big {
+  position: relative; display: inline-block !important; margin: 4px 0 2px; font-size: clamp(54px, 15.5vw, 118px); letter-spacing: -.045em;
+  background: linear-gradient(100deg, var(--teal-hi) 0%, #8a7dff 22%, #ff7ac8 38%, var(--gold-hi) 55%, var(--teal-hi) 75%, #8a7dff 100%);
+  background-size: 250% 100%; -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 0 22px rgba(79,195,182,.35)) drop-shadow(0 0 40px rgba(138,125,255,.18));
+  animation: holo-text 7s ease-in-out infinite alternate;
+}
+@keyframes holo-text { to { background-position: 100% 0; } }
+.ht-big::after { /* chromatic echo behind the foil letters */
+  content: attr(data-text); position: absolute; left: 0; top: 0; z-index: -1; transform: translate(2px, 3px);
+  color: transparent; -webkit-text-stroke: 1px rgba(122,230,218,.28);
+}
+.ht-big::before { /* three bear-claw slashes */
+  content: ""; position: absolute; right: -.34em; top: -.2em; width: .36em; height: .5em; pointer-events: none;
+  background:
+    linear-gradient(var(--gold-hi), var(--gold-hi)) 0 0 / 3px 100% no-repeat,
+    linear-gradient(var(--gold-hi), var(--gold-hi)) 50% 0 / 3px 100% no-repeat,
+    linear-gradient(var(--gold-hi), var(--gold-hi)) 100% 0 / 3px 100% no-repeat;
+  transform: skewX(-24deg); border-radius: 2px; opacity: .9;
+  filter: drop-shadow(0 0 6px rgba(224,176,74,.8));
+  -webkit-mask: linear-gradient(180deg, transparent, #000 25%, #000 70%, transparent); mask: linear-gradient(180deg, transparent, #000 25%, #000 70%, transparent);
+}
+.ht-end { font-size: clamp(26px, 7.4vw, 50px); color: transparent; -webkit-text-stroke: 1.5px rgba(238,243,251,.75); letter-spacing: .02em; }
 .lead { font-size: 17px; color: var(--muted); max-width: 540px; margin: 16px auto 24px; }
 .hero-ctas { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
 .hero-ctas .btn { flex: 1 1 150px; max-width: 240px; }
@@ -174,7 +203,7 @@ code { font-family: var(--mono); font-size: .9em; }
 .hero-note { display: inline-block; margin-top: 18px; color: var(--gold-hi); font-weight: 600; font-size: 14px; }
 .hero-note::before { content: "◆ "; color: var(--gold); }
 .hero-logo {
-  order: -1; justify-self: center; width: 150px; height: auto; border-radius: 50%;
+  order: -1; justify-self: center; width: 116px; height: auto; border-radius: 50%;
   box-shadow: 0 0 0 1px rgba(122,230,218,.6), 0 0 0 10px rgba(79,195,182,.07), 0 0 28px rgba(79,195,182,.4);
   animation: float 7s ease-in-out infinite;
 }
