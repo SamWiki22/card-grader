@@ -7,9 +7,11 @@ export default async function handler(req, res) {
   if (!packsReady()) return res.json({ user: null, ready: false });
   const user = await getUser(req, res);
   if (!user) return res.json({ user: null, ready: true });
-  const [balance, offers] = await Promise.all([
+  const staff = isStaff(user);
+  const [balance, offers, customerOffers] = await Promise.all([
     getBalance(user.id, user.email),
     db.from("submissions").select("id").eq("user_id", user.id).eq("status", "offered"),
+    staff ? db.from("offers").select("id").eq("status", "pending") : Promise.resolve({ data: [] }),
   ]);
-  res.json({ ready: true, user: { email: user.email, admin: isAdmin(user), staff: isStaff(user) }, balance_cents: balance, pending_offers: (offers.data || []).length });
+  res.json({ ready: true, user: { email: user.email, admin: isAdmin(user), staff: isStaff(user) }, balance_cents: balance, pending_offers: (offers.data || []).length, new_customer_offers: (customerOffers.data || []).length });
 }
