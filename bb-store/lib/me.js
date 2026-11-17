@@ -11,7 +11,7 @@ export function MeProvider({ children }) {
     try {
       const r = await fetch("/api/auth/me");
       const data = await r.json();
-      setMe({ loading: false, ready: !!data.ready, user: data.user, balance_cents: data.balance_cents || 0, pending_offers: data.pending_offers || 0 });
+      setMe({ loading: false, ready: !!data.ready, user: data.user, balance_cents: data.balance_cents || 0, pending_offers: data.pending_offers || 0, new_customer_offers: data.new_customer_offers || 0 });
     } catch {
       setMe(m => ({ ...m, loading: false }));
     }

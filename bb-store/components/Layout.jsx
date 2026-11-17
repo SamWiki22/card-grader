@@ -30,7 +30,7 @@ export default function Layout({ title, description, children }) {
             <Link href="/shop?category=singles" className={active("singles")}>Singles</Link>
             <Link href="/shop?category=sealed" className={active("sealed")}>Sealed</Link>
             <Link href="/packs" className={pathname.startsWith("/packs") ? "nav-link active nav-packs" : "nav-link nav-packs"}>Packs</Link>
-            {me.user?.staff && <Link href="/admin/store" className={pathname.startsWith("/admin") ? "nav-link active" : "nav-link"}>{me.user.admin ? "Admin" : "Inventory"}</Link>}
+            {me.user?.staff && <Link href="/admin/store" className={pathname.startsWith("/admin") ? "nav-link active" : "nav-link"}>{me.user.admin ? "Admin" : "Inventory"}{me.new_customer_offers ? ` (${me.new_customer_offers})` : ""}</Link>}
             {me.user && <Link href="/vault" className={pathname === "/vault" ? "nav-link active" : "nav-link"}>Vault</Link>}
           </nav>
           {me.user && <Link href="/vault" className="bal-chip" title="Pack balance">{centsToMoney(me.balance_cents)}</Link>}

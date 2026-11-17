@@ -2,6 +2,7 @@ import Link from "next/link";
 import { useState } from "react";
 import Layout from "../../components/Layout";
 import ProductImage from "../../components/ProductImage";
+import OfferForm from "../../components/OfferForm";
 import { useCart } from "../../lib/cart";
 import { getProduct } from "../../lib/catalog";
 import { money, GAME_LABEL, TYPE_LABEL, CONDITION_LABEL, CATEGORIES } from "../../lib/shared";
@@ -55,6 +56,7 @@ export default function ProductPage({ product }) {
               </div>
             )}
             {added && <p className="added">Added! <Link href="/cart">View cart →</Link></p>}
+            {!soldOut && <OfferForm product={product} />}
           </div>
         </div>
       </section>

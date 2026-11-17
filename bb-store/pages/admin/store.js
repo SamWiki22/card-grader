@@ -157,7 +157,10 @@ export default function Inventory() {
       <section className="wrap section admin">
         <div className="admin-head">
           <h1 className="page-title">Inventory</h1>
-          {me.user?.admin && <span className="admin-links"><Link href="/admin/sales" className="btn btn-small btn-ghost-dark">Sales →</Link> <Link href="/admin/packs" className="btn btn-small btn-ghost-dark">Packs admin →</Link></span>}
+          <span className="admin-links">
+            <Link href="/admin/offers" className="btn btn-small btn-ghost-dark">Offers{me.new_customer_offers ? ` (${me.new_customer_offers} new)` : ""} →</Link>
+            {me.user?.admin && <><Link href="/admin/sales" className="btn btn-small btn-ghost-dark">Sales →</Link> <Link href="/admin/packs" className="btn btn-small btn-ghost-dark">Packs admin →</Link></>}
+          </span>
         </div>
         <div className="inv-stats">
           <div><span className="muted small">In stock</span><b>{totals.units}</b></div>

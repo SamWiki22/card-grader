@@ -75,6 +75,10 @@ export default async function handler(req, res) {
         if (updated?.length) break;
       }
     }
+    // An offer bought through its link is done.
+    if (session.metadata?.offer_id) {
+      await db.from("offers").update({ status: "purchased", updated_at: new Date().toISOString() }).eq("id", session.metadata.offer_id);
+    }
     res.json({ received: true });
   } catch (e) {
     console.error(e);

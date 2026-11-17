@@ -393,3 +393,26 @@ end $$;
 
 revoke all on function pay_submission(text, text, bigint, text) from public, anon, authenticated;
 grant execute on function pay_submission(text, text, bigint, text) to service_role;
+
+-- ── v5: customer offers on store singles and sealed ──────────────────────
+-- id is the private token in the customer's offer link.
+create table if not exists offers (
+  id text primary key,
+  item_id text not null,
+  item_name text not null default '',
+  list_price numeric not null default 0,
+  name text not null,
+  email text not null,
+  phone text not null default '',
+  quantity integer not null default 1 check (quantity > 0),
+  amount_cents bigint not null check (amount_cents > 0),     -- per item
+  counter_cents bigint,                                       -- our counter, per item
+  message text not null default '',
+  admin_note text not null default '',
+  status text not null default 'pending',  -- pending | accepted | countered | declined | expired | purchased
+  expires_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists offers_status on offers (status, created_at desc);
+alter table offers enable row level security;

@@ -1,6 +1,7 @@
 import { stripe } from "../../lib/stripe";
 import { getProductsByIds } from "../../lib/catalog";
 import { GAME_LABEL } from "../../lib/shared";
+import { getOffer, offerPrice } from "../../lib/offers";
 
 // Builds a Stripe Checkout session from the cart. Prices and stock come from
 // the inventory database — never from the browser.
@@ -8,8 +9,16 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
   if (!stripe) return res.status(501).json({ error: "Online checkout isn’t set up yet." });
 
+  // Buying an accepted offer: one item, at the agreed price, from the offer link.
+  let offer = null;
+  if (req.body?.offer) {
+    offer = await getOffer(req.body.offer);
+    if (offerPrice(offer) == null) return res.status(409).json({ error: "This offer isn’t open for checkout (it may have expired)." });
+  }
+
   const requested = new Map();
-  for (const l of Array.isArray(req.body?.lines) ? req.body.lines.slice(0, 100) : []) {
+  if (offer) requested.set(offer.item_id, offer.quantity);
+  for (const l of offer ? [] : Array.isArray(req.body?.lines) ? req.body.lines.slice(0, 100) : []) {
     const qty = Math.floor(Number(l?.qty));
     if (l?.id && qty > 0) requested.set(String(l.id), (requested.get(String(l.id)) || 0) + qty);
   }
@@ -27,7 +36,7 @@ export default async function handler(req, res) {
     const p = byId[id];
     if (!p || p.price <= 0 || p.stock <= 0) { problems.push("An item in your cart just sold out."); continue; }
     if (qty > p.stock) { problems.push(`Only ${p.stock} of “${p.name}” left.`); continue; }
-    const unit = Math.round(p.price * 100);
+    const unit = offer ? Number(offerPrice(offer)) : Math.round(p.price * 100);
     subtotalCents += unit * qty;
     lineItems.push({
       quantity: qty,
@@ -37,7 +46,7 @@ export default async function handler(req, res) {
         product_data: {
           name: p.name,
           description: [GAME_LABEL[p.game], p.set, p.type === "single" ? p.condition : "Sealed"].filter(Boolean).join(" · ") || undefined,
-          metadata: { item_id: p.id },
+          metadata: offer ? { item_id: p.id, offer_id: offer.id } : { item_id: p.id },
         },
       },
     });
@@ -57,13 +66,14 @@ export default async function handler(req, res) {
   const origin = process.env.SITE_URL || `https://${req.headers.host}`;
   try {
     const session = await stripe.checkout.sessions.create({
+      ...(offer ? { metadata: { offer_id: offer.id }, customer_email: offer.email } : {}),
       mode: "payment",
       line_items: lineItems,
       shipping_address_collection: { allowed_countries: ["US"] },
       shipping_options: shippingOptions,
       phone_number_collection: { enabled: true },
       success_url: `${origin}/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${origin}/cart`,
+      cancel_url: offer ? `${origin}/offer/${offer.id}` : `${origin}/cart`,
     });
     res.json({ url: session.url });
   } catch (e) {
