@@ -2,7 +2,8 @@ import { useState } from "react";
 import Modal from "./Modal";
 import { useMe, postJSON } from "../lib/me";
 
-// Two steps: email -> 6-digit code (+ 18+ confirmation).
+// Step 1: email + 18+ box → we email a sign-in link.
+// Step 2: tap the link in the email (or, if the email shows a 6-digit code, type it here).
 export default function SignIn({ onClose, reason }) {
   const { refresh } = useMe();
   const [step, setStep] = useState("email");
@@ -14,43 +15,47 @@ export default function SignIn({ onClose, reason }) {
 
   async function send(e) {
     e.preventDefault();
+    if (!over18) return setError("Please confirm you’re 18 or older.");
     setBusy(true); setError("");
-    try { await postJSON("/api/auth/send-code", { email }); setStep("code"); }
-    catch (err) { setError(err.message); }
+    try {
+      try { localStorage.setItem("bb-after-signin", window.location.pathname); } catch {}
+      await postJSON("/api/auth/send-code", { email, over18 });
+      setStep("sent");
+    } catch (err) { setError(err.message); }
     setBusy(false);
   }
   async function verify(e) {
     e.preventDefault();
-    if (!over18) return setError("Please confirm you’re 18 or older.");
     setBusy(true); setError("");
-    try { await postJSON("/api/auth/verify", { email, code, over18 }); await refresh(); onClose(); }
+    try { await postJSON("/api/auth/verify", { email, code, over18: true }); await refresh(); onClose(); }
     catch (err) { setError(err.message); setBusy(false); }
   }
 
   return (
-    <Modal title="Sign in to Bearded Bear Packs" onClose={onClose}>
-      {reason && <p className="muted small">{reason}</p>}
+    <Modal title="Sign in to Bearded Bear" onClose={onClose}>
+      {reason && step === "email" && <p className="muted small">{reason}</p>}
       {step === "email" ? (
         <form onSubmit={send} className="stack">
           <label className="field">Email
             <input className="input" type="email" autoComplete="email" required value={email} onChange={e => setEmail(e.target.value)} autoFocus />
           </label>
-          <button className="btn btn-block" disabled={busy}>{busy ? "Sending…" : "Email me a sign-in code"}</button>
-          <p className="muted small">No password needed. New here? This creates your account.</p>
-        </form>
-      ) : (
-        <form onSubmit={verify} className="stack">
-          <p className="small">We sent a code to <b>{email}</b>.</p>
-          <label className="field">Sign-in code
-            <input className="input code-input" inputMode="numeric" autoComplete="one-time-code" required value={code} onChange={e => setCode(e.target.value)} autoFocus />
-          </label>
           <label className="check">
             <input type="checkbox" checked={over18} onChange={e => setOver18(e.target.checked)} />
             <span>I’m 18 or older and agree to the pack <a href="/packs/rules" target="_blank" rel="noreferrer">rules &amp; odds</a>.</span>
           </label>
-          <button className="btn btn-block" disabled={busy}>{busy ? "Checking…" : "Sign in"}</button>
-          <button type="button" className="link-button" onClick={() => { setStep("email"); setCode(""); }}>Use a different email</button>
+          <button className="btn btn-block" disabled={busy}>{busy ? "Sending…" : "Email me a sign-in link"}</button>
+          <p className="muted small">No password needed. New here? This creates your account.</p>
         </form>
+      ) : (
+        <div className="stack">
+          <p>We sent an email to <b>{email}</b>. Open it <b>on this device</b> and tap <b>Sign in</b> — you’ll come right back here, signed in.</p>
+          <p className="muted small">Nothing yet? Check spam, and give it a minute. If the email shows a 6-digit code instead, enter it:</p>
+          <form onSubmit={verify} className="stack">
+            <input className="input code-input" inputMode="numeric" autoComplete="one-time-code" placeholder="123456" value={code} onChange={e => setCode(e.target.value)} />
+            <button className="btn btn-block" disabled={busy || code.length < 6}>{busy ? "Checking…" : "Sign in with code"}</button>
+          </form>
+          <button type="button" className="link-button" onClick={() => { setStep("email"); setCode(""); setError(""); }}>Use a different email</button>
+        </div>
       )}
       {error && <p className="error">{error}</p>}
     </Modal>

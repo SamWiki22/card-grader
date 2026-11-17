@@ -23,7 +23,7 @@ export function CartProvider({ children }) {
     setLines(prev => {
       const existing = prev.find(l => l.id === p.id);
       if (existing) return prev.map(l => l.id === p.id ? { ...l, qty: Math.min(p.stock, l.qty + qty) } : l);
-      return [...prev, { id: p.id, name: p.name, set: p.set, price: p.price, stock: p.stock, type: p.type, condition: p.condition, qty: Math.min(p.stock, qty) }];
+      return [...prev, { id: p.id, name: p.name, set: p.set, price: p.price, stock: p.stock, type: p.type, condition: p.condition, v: p.v, qty: Math.min(p.stock, qty) }];
     });
   }, []);
   const setQty = useCallback((id, qty) => {

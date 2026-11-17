@@ -21,7 +21,7 @@ export default function ProductImage({ product, className = "" }) {
   }
   return (
     <div className={`product-img ${className}`}>
-      <img ref={ref} src={`/api/photo/${encodeURIComponent(product.id)}`} alt={product.name} loading="lazy" onError={() => setFailed(true)} />
+      <img ref={ref} src={`/api/photo/${encodeURIComponent(product.id)}${product.v ? `?v=${product.v}` : ""}`} alt={product.name} loading="lazy" onError={() => setFailed(true)} />
     </div>
   );
 }

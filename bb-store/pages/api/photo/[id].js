@@ -15,6 +15,6 @@ export default async function handler(req, res) {
     return res.status(404).end();
   }
   res.setHeader("Content-Type", m[1]);
-  res.setHeader("Cache-Control", "public, max-age=300, s-maxage=3600, stale-while-revalidate=86400");
+  res.setHeader("Cache-Control", "public, max-age=300, s-maxage=600, stale-while-revalidate=3600");
   res.send(Buffer.from(m[2], "base64"));
 }
