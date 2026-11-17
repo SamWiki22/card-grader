@@ -173,6 +173,25 @@ export default async function handler(req, res) {
       if (result.error?.message?.includes("NOT_ACCEPTED")) return res.status(409).json({ error: "The player hasn’t accepted this offer (or it’s already paid)." });
       break;
 
+    // Add (or remove) pack credit by hand: testing, refunds, giveaways, raffle prizes.
+    case "adjust-balance": {
+      const email = String(b.email || "").trim().toLowerCase();
+      const amount = cents(b.amount);
+      if (!email || !Number.isFinite(amount) || amount === 0) return res.status(400).json({ error: "Enter an email and an amount." });
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const { data: p } = await db.from("profiles").select("user_id,balance_cents").eq("email", email).maybeSingle();
+        if (!p) return res.status(404).json({ error: "No account with that email yet — they need to sign in once first." });
+        const next = Number(p.balance_cents) + amount;
+        if (next < 0) return res.status(400).json({ error: `That would take them below $0 (they have ${(p.balance_cents / 100).toFixed(2)}).` });
+        // Compare-and-set so a pack opened at the same moment isn't overwritten.
+        const { data: done } = await db.from("profiles").update({ balance_cents: next }).eq("user_id", p.user_id).eq("balance_cents", p.balance_cents).select("user_id");
+        if (!done?.length) continue;
+        await db.from("ledger").insert({ user_id: p.user_id, kind: "adjustment", amount_cents: amount, note: String(b.note || "Added by Bearded Bear").slice(0, 120), ref: `admin:${admin.email}` });
+        return res.json({ ok: true, balance_cents: next });
+      }
+      return res.status(409).json({ error: "Their balance changed at the same moment — try again." });
+    }
+
     case "unlink-tcg": {
       const table = b.target === "item" ? "items" : "pack_cards";
       result = await db.from(table).update({ tcg_category_id: null, tcg_group_id: null, tcg_product_id: null, tcg_subtype: null, price_source: "manual" }).eq("id", String(b.id));

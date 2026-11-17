@@ -14,7 +14,7 @@ const GAME_KEYWORDS = {
 };
 
 // Public columns only: cost, owner, notes, sku and low_stock never leave the server.
-const PUBLIC_COLUMNS = "id,type,game,name,set_name,condition,quantity,price,created_at";
+const PUBLIC_COLUMNS = "id,type,game,name,set_name,condition,quantity,price,created_at,updated_at";
 
 function inferGame(row) {
   if (row.game && GAMES.some(g => g.id === row.game)) return row.game;
@@ -35,6 +35,8 @@ export function toProduct(row) {
     stock: Math.max(0, row.quantity || 0),
     price: Number(row.price) || 0,
     createdAt: row.created_at || null,
+    // Changes when a photo is replaced (e.g. rotated), so browsers fetch the new one.
+    v: row.updated_at ? new Date(row.updated_at).getTime() : 0,
   };
 }
 

@@ -78,11 +78,14 @@ export default function AdminPacks() {
       <section className="wrap section admin">
         <div className="admin-head">
           <h1 className="page-title">Packs admin</h1>
+          <a href="/admin/store" className="btn btn-small btn-ghost-dark">Store inventory →</a>
           <button className="btn btn-small btn-ghost-dark" onClick={() => act({ action: "refresh-prices" }, r => `TCGplayer prices refreshed: ${r.updated} updated, ${r.unchanged} unchanged${r.missing ? `, ${r.missing} with no price` : ""}.`)}>
             Refresh TCGplayer prices ({synced} synced)
           </button>
         </div>
         {msg && <p className={msg.startsWith("Error") ? "error" : "banner light"}>{msg}</p>}
+
+        <GiveCredit act={act} />
 
         <Submissions subs={data.submissions} tiers={data.tiers} rules={data.rules} act={act} />
 
@@ -430,5 +433,24 @@ function SubmissionCard({ s, tiers, rules, act }) {
         )}
       </div>
     </div>
+  );
+}
+
+// Hand out pack credit: testing before Stripe is live, refunds, giveaways, raffle prizes.
+function GiveCredit({ act }) {
+  const [email, setEmail] = useState("");
+  const [amount, setAmount] = useState("50");
+  const [note, setNote] = useState("Test credit");
+  return (
+    <>
+      <h2 className="sub-title">Give pack credit</h2>
+      <form className="credit-form" onSubmit={async e => { e.preventDefault(); if (await act({ action: "adjust-balance", email, amount, note }, r => `Done — ${email} now has ${centsToMoney(r.balance_cents)}.`)) setEmail(""); }}>
+        <input className="input input-sm" type="email" required placeholder="player@email.com" value={email} onChange={e => setEmail(e.target.value)} />
+        <span className="money-input">$<input className="input input-sm num" type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} /></span>
+        <input className="input input-sm" placeholder="Reason (shows in their activity)" value={note} onChange={e => setNote(e.target.value)} />
+        <button className="btn btn-small">Add credit</button>
+      </form>
+      <p className="muted small">They need to have signed in once. Use a negative amount to take credit back.</p>
+    </>
   );
 }

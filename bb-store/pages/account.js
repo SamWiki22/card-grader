@@ -6,7 +6,7 @@ import AddFunds from "../components/AddFunds";
 import { useMe } from "../lib/me";
 import { centsToMoney } from "../lib/shared";
 
-const KIND = { deposit: "Added funds", pack_open: "Pack opened", buyback: "Sold back", shipping: "Shipping", adjustment: "Adjustment" };
+const KIND = { deposit: "Added funds", pack_open: "Pack opened", buyback: "Sold back", shipping: "Shipping", adjustment: "Credit from Bearded Bear", card_sale: "Sold a card to us" };
 
 export default function Account() {
   const me = useMe();
