@@ -259,3 +259,4 @@
   .add-card { grid-template-columns: 1fr 1fr; }
   .add-card input:first-child { grid-column: 1 / -1; }
 }
+.move-select { max-width: 150px; margin-left: 6px; }
