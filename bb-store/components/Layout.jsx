@@ -27,6 +27,7 @@ export default function Layout({ title, description, children }) {
             <span>Bearded Bear <b>TCG</b></span>
           </Link>
           <nav className="nav">
+            <Link href="/" className={pathname === "/" ? "nav-link active" : "nav-link"}>Home</Link>
             <Link href="/shop?category=singles" className={active("singles")}>Singles</Link>
             <Link href="/shop?category=sealed" className={active("sealed")}>Sealed</Link>
             <Link href="/packs" className={pathname.startsWith("/packs") ? "nav-link active nav-packs" : "nav-link nav-packs"}>Packs</Link>

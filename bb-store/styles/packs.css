@@ -227,3 +227,35 @@
 .offer-counter { display: flex; gap: 6px; align-items: center; }
 .offer-quick { display: flex; gap: 12px; flex-wrap: wrap; }
 @media (max-width: 760px) { .offer-row-card { grid-template-columns: 1fr; } }
+
+/* Packs admin: pool switcher, import, move to pool */
+.pool-head-row { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.pool-switch { max-width: 320px; }
+.import-pool { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.import-pool a { color: var(--teal-dark); text-decoration: underline; }
+.move-pool { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.move-pool .num { max-width: 80px; }
+
+/* Phones: admin tables become stacked cards (labels come from data-label) */
+@media (max-width: 700px) {
+  .admin .table-wrap { overflow: visible; background: none; border: 0; }
+  .admin .table, .admin .table tbody, .admin .table tr, .admin .table td { display: block; width: 100%; }
+  .admin .table thead { display: none; }
+  .admin .table tr { background: var(--paper); border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px; margin-bottom: 10px; }
+  .admin .table td { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px dashed var(--line); text-align: right; }
+  .admin .table td:last-child { border-bottom: 0; justify-content: flex-end; flex-wrap: wrap; }
+  .admin .table td[data-label]::before { content: attr(data-label); color: var(--muted); font-size: 13px; font-weight: 600; text-align: left; flex: none; }
+  .admin .table td:first-child { font-weight: 700; justify-content: flex-start; text-align: left; flex-direction: column; align-items: flex-start; }
+  .admin .table td:first-child::before { display: none; }
+  .admin .table td .input-sm { max-width: 160px; }
+  .admin .table td[colspan] { justify-content: center; }
+  .inv-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .inv-stats > div { min-width: 0; padding: 8px 10px; }
+  .inv-stats b { font-size: 16px; }
+  .inv-top-actions .btn { flex: 1; }
+  .move-pool { width: 100%; justify-content: flex-end; }
+}
+@media (max-width: 860px) {
+  .add-card { grid-template-columns: 1fr 1fr; }
+  .add-card input:first-child { grid-column: 1 / -1; }
+}
