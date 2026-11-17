@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Layout from "../../components/Layout";
 import SignIn from "../../components/SignIn";
 import TcgPicker from "../../components/TcgPicker";
 import Modal from "../../components/Modal";
 import { useMe, postJSON } from "../../lib/me";
 import { GAME_LABEL, GAME_SHORT, COMP_SOURCES, centsToMoney, money } from "../../lib/shared";
+import { balanceWeights, expectedValue, oddsFor, DEFAULT_TARGET_MARGIN } from "../../lib/odds";
 
 const pct = n => `${(n * 100).toFixed(1)}%`;
 const STATUS = { available: "In pool", held: "In a vault", ship_requested: "To ship", shipped: "Shipped", retired: "Pulled from pool" };
@@ -124,6 +125,7 @@ export default function AdminPacks() {
                 {data.tiers.map(t => <option key={t.id} value={t.id}>{GAME_LABEL[t.game]} · {t.name} ({t.poolSize} cards)</option>)}
               </select>
             </div>
+            <BalancePool tier={tier} cards={cards} act={act} />
             <ImportPool tier={tier} act={act} />
             <AddCard tier={tier} pick={pick} onAdd={b => act({ action: "add-card", tier_id: tier.id, ...b }, "Card added to pool.")} />
             <div className="table-wrap">
@@ -306,7 +308,7 @@ function CardRow({ c, tiers, rules, total, onSave, onLink, onUnlink, onComp }) {
       <td>{c.grade}</td>
       <td><input className="input input-sm num" type="number" step="0.01" value={value} onChange={e => setValue(e.target.value)} disabled={c.price_source !== "manual"} title={c.price_source === "tcgplayer" ? "Synced from TCGplayer — unlink to edit by hand" : c.price_source === "comp" ? "Set from the last sale — edit it under Last sold" : ""} /></td>
       <td><input className="input input-sm num" type="number" min="0" max="100" placeholder={`${auto} auto`} value={bb} onChange={e => setBb(e.target.value)} /></td>
-      <td><input className="input input-sm num" type="number" step="0.1" min="0.1" value={weight} onChange={e => setWeight(e.target.value)} /></td>
+      <td><input className="input input-sm num" type="number" step="any" min="0" inputMode="decimal" value={weight} onChange={e => setWeight(e.target.value)} /></td>
       <td>{inPool && total ? pct(Number(c.weight) / total) : "—"}</td>
       <td className="nowrap"><TcgStatus row={c} /><br /><button className="link-button" onClick={onLink}>{c.tcg_product_id ? "Relink" : "Link"}</button>{c.tcg_product_id && <> · <button className="link-button" onClick={onUnlink}>Unlink</button></>}</td>
       <td><CompCell row={c} onEdit={onComp} /></td>
@@ -324,6 +326,131 @@ function CardRow({ c, tiers, rules, total, onSave, onLink, onUnlink, onComp }) {
         </select>
       </td>
     </tr>
+  );
+}
+
+// "12.5%" for everyday chances, "1 in 4,300" once they get small.
+const chance = p => (!p ? "—" : p >= 0.01 ? pct(p) : `1 in ${Math.round(1 / p).toLocaleString("en-US")}`);
+const fmtWeight = w => String(Number(w));
+
+// Balance to target margin: cards worth ≤ the pack price go to weight 1, pricier
+// cards are scaled down (the pricier, the more) until the average pull is about
+// (1 − margin) × price. The preview runs the same code the server runs on save.
+function BalancePool({ tier, cards, act }) {
+  const [open, setOpen] = useState(false);
+  const [target, setTarget] = useState(String(DEFAULT_TARGET_MARGIN * 100));
+  const [busy, setBusy] = useState(false);
+  const price = Number(tier.price_cents);
+  const pool = useMemo(() => cards.filter(c => c.status === "available"), [cards]);
+  const margin = Number(target) / 100;
+  const validTarget = target.trim() !== "" && margin >= 0 && margin <= 0.9;
+
+  const preview = useMemo(() => {
+    if (!open || !validTarget) return null;
+    const plan = balanceWeights(pool, price, margin);
+    const after = pool.map(c => ({ ...c, weight: plan.weights[c.id] ?? c.weight }));
+    const total = after.reduce((s, c) => s + Number(c.weight), 0);
+    const oddsNow = oddsFor(pool, price), oddsAfter = oddsFor(after, price);
+    // One line per identical card (same name, grade, value and weights).
+    const groups = new Map();
+    let changed = 0, lowCount = 0, lowReset = 0, lowValue = 0;
+    for (const c of pool) {
+      const w = plan.weights[c.id];
+      if (Number(c.weight) !== w) changed++;
+      if (c.market_value_cents <= price) {
+        lowCount++; lowValue += c.market_value_cents;
+        if (Number(c.weight) !== w) lowReset++;
+        continue;
+      }
+      const key = [c.name, c.grade, c.market_value_cents, c.weight, w].join("|");
+      const g = groups.get(key) || { name: c.name, grade: c.grade, value: c.market_value_cents, from: Number(c.weight), to: w, count: 0 };
+      g.count++;
+      groups.set(key, g);
+    }
+    const hits = [...groups.values()].sort((a, b) => b.value - a.value || a.name.localeCompare(b.name));
+    return { plan, total, oddsNow, oddsAfter, hits, changed, lowCount, lowReset, lowAvg: lowCount ? lowValue / lowCount : 0 };
+  }, [open, validTarget, pool, price, margin]);
+
+  const evNow = expectedValue(pool);
+  const marginNow = pool.length && price ? 1 - evNow / price : null;
+
+  async function save() {
+    setBusy(true);
+    const ok = await act({ action: "balance-pool", tier: tier.id, margin },
+      r => `${tier.name} balanced: ${r.changed} weight${r.changed === 1 ? "" : "s"} changed · avg pull ${centsToMoney(r.evCents)} · margin ${pct(r.margin)}.`);
+    setBusy(false);
+    if (ok) setOpen(false);
+  }
+
+  const p = preview?.plan;
+  return (
+    <>
+      <div className="balance-bar">
+        <button className="btn btn-small" onClick={() => setOpen(true)} disabled={!pool.length}>⚖ Balance to target margin</button>
+        <span className="muted small">Now: avg pull {pool.length ? centsToMoney(Math.round(evNow)) : "—"} · margin {marginNow === null ? "—" : pct(marginNow)}</span>
+      </div>
+      {open && (
+        <Modal wide title={`Balance ${GAME_SHORT[tier.game]} · ${tier.name}`} onClose={() => setOpen(false)}>
+          <div className="bal">
+            <label className="bal-target">
+              <span>Target margin</span>
+              <span className="money-input"><input className="input input-sm num" type="number" inputMode="decimal" min="0" max="90" step="0.5" value={target} onChange={e => setTarget(e.target.value)} />%</span>
+              <span className="muted small">of {centsToMoney(price)} → avg pull ≈ {validTarget ? centsToMoney(Math.round((1 - margin) * price)) : "—"}</span>
+            </label>
+            {!validTarget && <p className="error small">Enter a margin between 0% and 90%.</p>}
+
+            {preview && (
+              <>
+                <div className="bal-stats">
+                  <div><span className="muted small">Now</span><b>{centsToMoney(Math.round(evNow))}</b><span className={marginNow < 0.1 ? "neg" : "pos"}>{pct(marginNow)} margin</span></div>
+                  <div className="bal-arrow" aria-hidden="true">→</div>
+                  <div><span className="muted small">After</span><b>{centsToMoney(Math.round(p.evCents))}</b><span className={p.margin < 0.1 ? "neg" : "pos"}>{pct(p.margin)} margin</span></div>
+                </div>
+
+                {p.status === "already-under" && <p className="banner light small">Even with every card at weight 1 the margin is {pct(p.margin)}, above your target. This only ever makes hits rarer, so the closest it gets is every card at weight 1.</p>}
+                {p.status === "no-hits" && <p className="banner light small">No card is worth more than {centsToMoney(price)}, so there’s nothing to scale. Every card goes to weight 1.</p>}
+                {p.status === "unreachable" && <p className="error small">Can’t reach {pct(margin)}: the {preview.lowCount} cards at or under {centsToMoney(price)} average {centsToMoney(Math.round(preview.lowAvg))} on their own ({pct(1 - preview.lowAvg / price)} margin), even with hits made nearly impossible. Add cheaper cards or lower the target.</p>}
+
+                <h3 className="bal-h">Odds by value</h3>
+                <table className="bal-odds">
+                  <thead><tr><th>Card value</th><th>Now</th><th>After</th></tr></thead>
+                  <tbody>
+                    {preview.oddsAfter.map(b => (
+                      <tr key={b.band}>
+                        <td>{b.minCents === b.maxCents ? centsToMoney(b.minCents) : `${centsToMoney(b.minCents)}–${centsToMoney(b.maxCents)}`}<span className="muted small"> · {b.count}</span></td>
+                        <td>{chance(preview.oddsNow.find(x => x.band === b.band)?.chance)}</td>
+                        <td><b>{chance(b.chance)}</b></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                <h3 className="bal-h">New weights</h3>
+                {preview.hits.length > 0 && (
+                  <ul className="bal-list">
+                    {preview.hits.map((g, i) => (
+                      <li key={i} className={g.from === g.to ? "same" : ""}>
+                        <div className="bal-card"><span>{g.name}{g.grade ? <span className="muted"> · {g.grade}</span> : null}{g.count > 1 ? <span className="muted"> ×{g.count}</span> : null}</span><b>{centsToMoney(g.value)}</b></div>
+                        <div className="muted small">weight {fmtWeight(g.from)} → <b className="ink">{fmtWeight(g.to)}</b> · {chance(g.to / preview.total)} per pull{g.count > 1 ? " each" : ""}</div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <p className="muted small">{preview.lowCount} card{preview.lowCount === 1 ? "" : "s"} worth {centsToMoney(price)} or less {preview.lowCount === 1 ? "sits" : "sit"} at weight 1{preview.lowReset ? ` (${preview.lowReset} reset from another weight)` : ""}.</p>
+
+                <div className="bal-actions">
+                  <button className="btn" onClick={save} disabled={busy || p.status === "unreachable" || !preview.changed}>
+                    {busy ? "Saving…" : preview.changed ? `Save ${preview.changed} weight${preview.changed === 1 ? "" : "s"}` : "No changes"}
+                  </button>
+                  <button className="link-button" onClick={() => setOpen(false)}>Cancel</button>
+                </div>
+                <p className="muted small">Weights are recalculated from the pool at the moment you save, so a card pulled in between is handled.</p>
+              </>
+            )}
+          </div>
+        </Modal>
+      )}
+    </>
   );
 }
 

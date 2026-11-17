@@ -65,6 +65,12 @@ positive (roughly 10–25%) by stocking mostly cards worth a bit under the pack 
 hits. Lower a chase card's weight to make it rarer. The margin moves every time a card is pulled
 or sold back, so check it often.
 
+**Balance to target margin** (button above each pool) does the weighting for you. Cards worth the pack price or less go
+to weight 1; pricier cards get weight (price ÷ value)^k, one k for the whole pool, so a $200 hit is cut far more than a
+$30 one. k is picked so the average pull ≈ (1 − margin) × pack price. The target defaults to 15%. You see the new weights,
+the odds of each value range and the resulting margin before anything is saved. It only makes hits rarer: if the pool
+is already above the target with every card at weight 1, that's as close as it gets.
+
 ### Before you take real money
 - **Legal:** paid random packs with cash-value prizes and buyback can count as gambling or a
   lottery in some states. Talk to a lawyer about age limits, state restrictions and whether you

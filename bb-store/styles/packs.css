@@ -260,3 +260,29 @@
   .add-card input:first-child { grid-column: 1 / -1; }
 }
 .move-select { max-width: 150px; margin-left: 6px; }
+
+/* Packs admin: balance pool to a target margin */
+.balance-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.bal { display: flex; flex-direction: column; gap: 12px; }
+.bal-target { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-weight: 600; }
+.bal-target .num { max-width: 90px; font-size: 16px; } /* 16px stops iOS zooming on focus */
+.bal-stats { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; align-items: center; }
+.bal-stats > div:not(.bal-arrow) { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; }
+.bal-stats b { font-size: 20px; color: var(--navy); font-variant-numeric: tabular-nums; }
+.bal-arrow { color: var(--muted); font-size: 20px; }
+.bal-h { font-size: 16px; color: var(--navy); margin: 4px 0 0; }
+.bal-odds { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+.bal-odds th { text-align: left; color: var(--muted); font-weight: 600; padding: 6px 4px; border-bottom: 1px solid var(--line); }
+.bal-odds td { padding: 6px 4px; border-bottom: 1px dashed var(--line); }
+.bal-odds th:not(:first-child), .bal-odds td:not(:first-child) { text-align: right; white-space: nowrap; }
+.bal-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.bal-list li { padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; }
+.bal-list li.same { opacity: .6; }
+.bal-card { display: flex; justify-content: space-between; gap: 10px; font-size: 14px; }
+.bal-card b { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bal-list .ink { color: var(--ink); }
+.bal-actions { display: flex; align-items: center; gap: 14px; }
+@media (max-width: 480px) {
+  .modal:has(.bal) { padding: 18px 14px; }
+  .bal-actions .btn { flex: 1; }
+}

@@ -68,6 +68,8 @@ and logins, the same project BB Inventory already uses), **Vercel** (hosting), a
 3. Click **Pool** next to a tier, then add cards: name, set, grade, market value, and a photo.
 4. Watch **House margin** in the tiers table and keep it positive (aim for 10–25%). Mostly stock
    cards worth a bit less than the pack price, plus a few hits.
+   Or tap **⚖ Balance to target margin** above the pool: set a margin (15% by default), check the preview, then **Save**.
+   Re-run it after restocking, since prices and the pool keep changing.
 5. Untick **Live** on tiers you aren't ready to sell, then click **Save**.
 6. **Buyback rates** (same page): set what players get back by card value. The defaults are 75% under $20,
    85% from $20, 90% from $100 and 95% from $500. Type a % in a card's **Buyback** box to override it for that card.
