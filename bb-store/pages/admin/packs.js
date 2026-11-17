@@ -104,7 +104,13 @@ export default function AdminPacks() {
 
         {tier && (
           <>
-            <h2 className="sub-title">{GAME_LABEL[tier.game]} · {tier.name} pool</h2>
+            <div className="pool-head-row">
+              <h2 className="sub-title">{GAME_LABEL[tier.game]} · {tier.name} pool</h2>
+              <select className="input pool-switch" value={tierId} onChange={e => setTierId(e.target.value)} aria-label="Switch pool">
+                {data.tiers.map(t => <option key={t.id} value={t.id}>{GAME_LABEL[t.game]} · {t.name} ({t.poolSize} cards)</option>)}
+              </select>
+            </div>
+            <ImportPool tier={tier} act={act} />
             <AddCard tier={tier} pick={pick} onAdd={b => act({ action: "add-card", tier_id: tier.id, ...b }, "Card added to pool.")} />
             <div className="table-wrap">
               <table className="table">
@@ -137,6 +143,7 @@ export default function AdminPacks() {
                   <td><TcgStatus row={i} /></td>
                   <td><CompCell row={i} onEdit={() => setComp({ target: "item", row: i })} /></td>
                   <td className="nowrap">
+                    <MoveToPool item={i} tiers={data.tiers} act={act} />{" "}
                     <button className="btn btn-small btn-ghost-dark" onClick={() => pick(i.game || "pokemon", t => act({ action: "link-tcg", target: "item", id: i.id, tcg: t }, `${i.name} linked${t.autoPrice ? " — store price now follows TCGplayer" : ""}.`))}>{i.tcg_product_id ? "Relink" : "Link"}</button>{" "}
                     {i.tcg_product_id && <button className="link-button" onClick={() => act({ action: "unlink-tcg", target: "item", id: i.id }, "Link removed.")}>Unlink</button>}
                   </td>
@@ -452,5 +459,72 @@ function GiveCredit({ act }) {
       </form>
       <p className="muted small">They need to have signed in once. Use a negative amount to take credit back.</p>
     </>
+  );
+}
+
+// → Pack: move copies of a store single into a pool (photo, name, value carried over).
+function MoveToPool({ item, tiers, act }) {
+  const [open, setOpen] = useState(false);
+  const own = tiers.filter(t => t.game === (item.game || "other"));
+  const list = own.length ? own : tiers;
+  const [tier, setTier] = useState(list[0]?.id || "");
+  const [qty, setQty] = useState(1);
+  const [value, setValue] = useState(Number(item.price).toFixed(2));
+  if (!open) return <button className="btn btn-small" disabled={item.quantity <= 0} onClick={() => setOpen(true)}>→ Pack</button>;
+  return (
+    <span className="move-pool">
+      <select className="input input-sm" value={tier} onChange={e => setTier(e.target.value)} aria-label="Pool">{list.map(t => <option key={t.id} value={t.id}>{GAME_LABEL[t.game]} · {t.name}</option>)}</select>
+      <input className="input input-sm num" type="number" min="1" max={item.quantity} value={qty} onChange={e => setQty(e.target.value)} aria-label="How many" title="How many copies" />
+      <span className="money-input">$<input className="input input-sm num" type="number" step="0.01" min="0" value={value} onChange={e => setValue(e.target.value)} aria-label="Pool value" title="Value in the pool" /></span>
+      <button className="btn btn-small" onClick={async () => { if (await act({ action: "move-to-pool", id: item.id, tier, qty, value }, `Moved ${qty} × ${item.name} into the pool.`)) setOpen(false); }}>Move</button>
+      <button className="link-button" onClick={() => setOpen(false)}>Cancel</button>
+    </span>
+  );
+}
+
+// Minimal CSV parser (quoted fields, commas and newlines inside quotes).
+function parseCSV(text) {
+  const rows = []; let row = [], cell = "", q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) { if (c === '"' && text[i + 1] === '"') { cell += '"'; i++; } else if (c === '"') q = false; else cell += c; }
+    else if (c === '"') q = true;
+    else if (c === ",") { row.push(cell); cell = ""; }
+    else if (c === "\n" || c === "\r") { if (c === "\r" && text[i + 1] === "\n") i++; row.push(cell); rows.push(row); row = []; cell = ""; }
+    else cell += c;
+  }
+  if (cell || row.length) { row.push(cell); rows.push(row); }
+  return rows.filter(r => r.some(x => x.trim()));
+}
+const COLS = { name: ["name", "card", "card name", "title"], set: ["set", "set name", "expansion"], grade: ["grade", "condition"], value: ["value", "price", "market", "market value"], qty: ["qty", "quantity", "count"], image: ["image", "photo", "image url", "img"], weight: ["weight"] };
+
+// Import CSV: spreadsheet → pool. Columns (any order): name, set, grade, value, qty, image, weight.
+function ImportPool({ tier, act }) {
+  const [rows, setRows] = useState(null);
+  const [err, setErr] = useState("");
+  async function onFile(e) {
+    const file = e.target.files?.[0]; e.target.value = ""; setErr(""); setRows(null);
+    if (!file) return;
+    const table = parseCSV(await file.text());
+    if (table.length < 2) return setErr("That file has no rows.");
+    const head = table[0].map(h => h.trim().toLowerCase());
+    const idx = Object.fromEntries(Object.entries(COLS).map(([k, names]) => [k, head.findIndex(h => names.includes(h))]));
+    if (idx.name < 0 || idx.value < 0) return setErr("Needs at least a “name” column and a “value” (or “price”) column.");
+    setRows(table.slice(1).map(r => Object.fromEntries(Object.entries(idx).map(([k, i]) => [k, i >= 0 ? (r[i] || "").trim().replace(/^\$/, "") : ""]))).filter(r => r.name));
+  }
+  const template = "data:text/csv;charset=utf-8," + encodeURIComponent("name,set,grade,value,qty,image,weight\nSon Goku SCR FB01-139,Awakened Pulse,PSA 10,120,1,,0.5\nVegeta SR FB02-061,Blazing Aura,Raw NM,6.50,3,,1\n");
+  return (
+    <div className="import-pool">
+      <label className="btn btn-small btn-ghost-dark">⬆ Import CSV into {tier.name}<input type="file" accept=".csv,text/csv" onChange={onFile} hidden /></label>
+      <a className="small" href={template} download="pool-template.csv">Download template</a>
+      {rows && (
+        <span className="small">
+          {rows.length} card{rows.length === 1 ? "" : "s"} ({rows.reduce((s, r) => s + (Number(r.qty) || 1), 0)} copies) ready ·{" "}
+          <button className="btn btn-small" onClick={async () => { if (await act({ action: "import-pool", tier: tier.id, rows }, r => `Imported ${r.added} cards into ${tier.name}.`)) setRows(null); }}>Import</button>{" "}
+          <button className="link-button" onClick={() => setRows(null)}>Cancel</button>
+        </span>
+      )}
+      {err && <span className="error small">{err}</span>}
+    </div>
   );
 }

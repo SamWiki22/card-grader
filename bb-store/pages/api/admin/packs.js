@@ -59,6 +59,69 @@ export default async function handler(req, res) {
       }).eq("id", String(b.id));
       break;
 
+    // Move copies of a store item (singles from inventory) into a pack pool, one pool card per copy.
+    case "move-to-pool": {
+      const qty = Math.max(1, Math.min(50, Math.round(Number(b.qty) || 1)));
+      const { data: tierRow } = await db.from("pack_tiers").select("id").eq("id", String(b.tier || "")).maybeSingle();
+      if (!tierRow) return res.status(400).json({ error: "Pick a pool." });
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const { data: item } = await db.from("items").select("*").eq("id", String(b.id)).maybeSingle();
+        if (!item) return res.status(404).json({ error: "Item not found." });
+        if (item.quantity < qty) return res.status(409).json({ error: `Only ${item.quantity} in stock.` });
+        // Compare-and-set so a sale at the same moment isn't lost.
+        const { data: took } = await db.from("items").update({ quantity: item.quantity - qty, updated_at: new Date().toISOString() })
+          .eq("id", item.id).eq("quantity", item.quantity).select("id");
+        if (!took?.length) continue;
+        const value = b.value !== undefined && b.value !== "" ? cents(b.value) : Math.round(Number(item.price) * 100);
+        const grade = String(b.grade || (item.condition ? (/^(psa|bgs|cgc|tag|sgc)/i.test(item.condition) ? item.condition : `Raw ${item.condition}`) : "")).slice(0, 40);
+        const rows = Array.from({ length: qty }, () => ({
+          id: randomBytes(8).toString("hex"),
+          tier_id: tierRow.id,
+          name: String(item.name).slice(0, 120),
+          set_name: String(item.set_name || "").slice(0, 120),
+          grade,
+          market_value_cents: value,
+          weight: Number(b.weight) > 0 ? Number(b.weight) : 1,
+          image: item.photo || null,
+          tcg_category_id: item.tcg_category_id ?? null, tcg_group_id: item.tcg_group_id ?? null,
+          tcg_product_id: item.tcg_product_id ?? null, tcg_subtype: item.tcg_subtype ?? null,
+          price_source: item.price_source === "tcgplayer" ? "tcgplayer" : "manual",
+        }));
+        const { error } = await db.from("pack_cards").insert(rows);
+        if (error) {
+          // Put the stock back so nothing goes missing.
+          await db.from("items").update({ quantity: item.quantity }).eq("id", item.id).eq("quantity", item.quantity - qty);
+          console.error(error);
+          return res.status(500).json({ error: "Couldn’t add to the pool — stock unchanged." });
+        }
+        return res.json({ ok: true, moved: qty });
+      }
+      return res.status(409).json({ error: "Stock changed at the same moment — try again." });
+    }
+
+    // Bulk import cards into a pool from a spreadsheet (CSV parsed in the browser).
+    case "import-pool": {
+      const { data: tierRow } = await db.from("pack_tiers").select("id").eq("id", String(b.tier || "")).maybeSingle();
+      if (!tierRow) return res.status(400).json({ error: "Pick a pool." });
+      const rows = [];
+      for (const r of Array.isArray(b.rows) ? b.rows.slice(0, 1000) : []) {
+        const name = String(r.name || "").trim().slice(0, 120);
+        const value = cents(r.value);
+        if (!name || !(value >= 0)) continue;
+        const copies = Math.max(1, Math.min(50, Math.round(Number(r.qty) || 1)));
+        for (let i = 0; i < copies && rows.length < 2000; i++) rows.push({
+          id: randomBytes(8).toString("hex"), tier_id: tierRow.id, name,
+          set_name: String(r.set || "").slice(0, 120), grade: String(r.grade || "").slice(0, 40),
+          market_value_cents: value, weight: Number(r.weight) > 0 ? Number(r.weight) : 1,
+          image: /^https:\/\//.test(String(r.image || "")) ? String(r.image).slice(0, 500) : null,
+        });
+      }
+      if (!rows.length) return res.status(400).json({ error: "No usable rows — each needs at least a name and a value." });
+      const { error } = await db.from("pack_cards").insert(rows);
+      if (error) { console.error(error); return res.status(500).json({ error: error.message }); }
+      return res.json({ ok: true, added: rows.length });
+    }
+
     case "add-card": {
       if (!b.tier_id || !b.name || !(Number(b.value) >= 0)) return res.status(400).json({ error: "Tier, name and value are required." });
       result = await db.from("pack_cards").insert({

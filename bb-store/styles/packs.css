@@ -227,3 +227,11 @@
 .offer-counter { display: flex; gap: 6px; align-items: center; }
 .offer-quick { display: flex; gap: 12px; flex-wrap: wrap; }
 @media (max-width: 760px) { .offer-row-card { grid-template-columns: 1fr; } }
+
+/* Packs admin: pool switcher, import, move to pool */
+.pool-head-row { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.pool-switch { max-width: 320px; }
+.import-pool { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.import-pool a { color: var(--teal-dark); text-decoration: underline; }
+.move-pool { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.move-pool .num { max-width: 80px; }
