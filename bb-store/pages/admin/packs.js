@@ -133,8 +133,9 @@ export default function AdminPacks() {
               <PhotoPass tier={tier} cards={cards} onDone={m => { load(); setMsg(m); }} />
               <PackPreview tier={tier} cards={cards} />
             </div>
-            <ImportPool tier={tier} act={act} />
+            <ImportPool tier={tier} act={act} allCards={data.cards} />
             <AddCard tier={tier} pick={pick} onAdd={b => act({ action: "add-card", tier_id: tier.id, ...b }, "Card added to pool.")} />
+            <PoolCounts cards={cards} />
             <div className="table-wrap">
               <table className="table">
                 <thead><tr><th>Card</th><th>Grade</th><th>Value</th><th>Buyback</th><th>Weight</th><th>Chance</th><th>TCGplayer</th><th>Last sold</th><th>Status</th><th /></tr></thead>
@@ -426,13 +427,13 @@ function CardRow({ c, tiers, rules, total, onSave, onLink, onUnlink, onComp }) {
         {dirty && <button className="btn btn-small" onClick={() => onSave({ ...(c.price_source !== "manual" ? {} : { value }), weight, buyback_percent: bb })}>Save</button>}{" "}
         {c.status === "available" && <button className="link-button" onClick={() => onSave({ status: "retired" })}>Remove</button>}
         {c.status === "retired" && <button className="link-button" onClick={() => onSave({ status: "available" })}>Restore</button>}
-        {/* Move this card to another pool of the same game (live tiers first). */}
-        <select className="input input-sm move-select" value="" aria-label="Move to pool" onChange={e => e.target.value && onSave({ tier_id: e.target.value })}>
+        {/* Move this card to another pool of the same game (live tiers first). Cards in a player's vault stay put. */}
+        {(c.status === "available" || c.status === "retired") && <select className="input input-sm move-select" value="" aria-label="Move to pool" onChange={e => e.target.value && onSave({ tier_id: e.target.value })}>
           <option value="">Move to…</option>
           {tiers.filter(t => t.game === tiers.find(x => x.id === c.tier_id)?.game && t.id !== c.tier_id)
             .sort((a, b) => Number(b.active) - Number(a.active) || a.price_cents - b.price_cents)
             .map(t => <option key={t.id} value={t.id}>{t.name} · {centsToMoney(t.price_cents)}{t.active ? "" : " (hidden)"}</option>)}
-        </select>
+        </select>}
       </td>
     </tr>
   );
@@ -560,6 +561,18 @@ function BalancePool({ tier, cards, act }) {
         </Modal>
       )}
     </>
+  );
+}
+
+// Where every card that was ever stocked in this pool is now.
+function PoolCounts({ cards }) {
+  const n = st => cards.filter(c => c.status === st).length;
+  const parts = [["In pool", n("available")], ["In vaults", n("held")], ["Waiting to ship", n("ship_requested")], ["Shipped", n("shipped")], ["Removed", n("retired")]];
+  return (
+    <p className="pool-counts small">
+      {parts.filter(([, v], i) => v || i === 0).map(([label, v]) => <span key={label}><b>{v}</b> {label}</span>)}
+      <span className="muted">· {cards.length} total</span>
+    </p>
   );
 }
 
@@ -757,9 +770,32 @@ const OWNER_NAMES = { sam: "Sam", bear_umer: "Bear / Umer", shared: "Shared 50/5
 const COLS = { owner: ["owner"], cost: ["cost"], name: ["name", "card", "card name", "title"], set: ["set", "set name", "expansion"], grade: ["grade", "condition"], value: ["value", "price", "market", "market value"], qty: ["qty", "quantity", "count"], image: ["image", "photo", "image url", "img"], weight: ["weight"] };
 
 // Import CSV: spreadsheet → pool. Columns (any order): name, set, grade, value, qty, image, weight.
-function ImportPool({ tier, act }) {
+// Same card = same name, set and grade (values drift with price syncs).
+const cardKey = (name, set, grade) => [name, set, grade].map(v => String(v || "").trim().toLowerCase().replace(/\s+/g, " ")).join("|");
+
+function ImportPool({ tier, act, allCards }) {
   const [rows, setRows] = useState(null);
   const [err, setErr] = useState("");
+  const [skipDupes, setSkipDupes] = useState(true);
+  // Re-importing the same file (e.g. an IllestCollect export) must not double the
+  // pool. Match each row against cards already in any pool, in a vault or shipped,
+  // copy for copy, and leave those copies out unless told otherwise.
+  const plan = useMemo(() => {
+    if (!rows) return null;
+    const have = new Map();
+    for (const c of allCards) { const k = cardKey(c.name, c.set_name, c.grade); have.set(k, (have.get(k) || 0) + 1); }
+    let dupes = 0;
+    const fresh = [];
+    for (const r of rows) {
+      const k = cardKey(r.name, r.set, r.grade);
+      const qty = Math.max(1, Math.round(Number(r.qty) || 1));
+      const already = Math.min(qty, have.get(k) || 0);
+      have.set(k, (have.get(k) || 0) - already);
+      dupes += already;
+      if (qty - already > 0) fresh.push({ ...r, qty: qty - already });
+    }
+    return { dupes, fresh };
+  }, [rows, allCards]);
   async function onFile(e) {
     const file = e.target.files?.[0]; e.target.value = ""; setErr(""); setRows(null);
     if (!file) return;
@@ -788,13 +824,25 @@ function ImportPool({ tier, act }) {
     <div className="import-pool">
       <label className="btn btn-small btn-ghost-dark">⬆ Import CSV / IllestCollect JSON into {tier.name}<input type="file" accept=".csv,text/csv,.json,application/json" onChange={onFile} hidden /></label>
       <a className="small" href={template} download="pool-template.csv">Download template</a>
-      {rows && (
-        <span className="small">
-          {rows.length} card{rows.length === 1 ? "" : "s"} ({rows.reduce((s, r) => s + (Number(r.qty) || 1), 0)} copies, {money(rows.reduce((s, r) => s + Number(r.value || 0) * (Number(r.qty) || 1), 0))} total value) ready ·{" "}
-          <button className="btn btn-small" onClick={async () => { if (await act({ action: "import-pool", tier: tier.id, rows }, r => `Imported ${r.added} cards into ${tier.name}.`)) setRows(null); }}>Import</button>{" "}
-          <button className="link-button" onClick={() => setRows(null)}>Cancel</button>
-        </span>
-      )}
+      {rows && plan && (() => {
+        const send = skipDupes ? plan.fresh : rows;
+        const copies = send.reduce((s, r) => s + (Number(r.qty) || 1), 0);
+        return (
+          <span className="small import-ready">
+            {plan.dupes > 0 && (
+              <span className="import-dupes">
+                ⚠ {plan.dupes} cop{plan.dupes === 1 ? "y is" : "ies are"} already in your pools or vaults (same name, set and grade).{" "}
+                <label className="check-inline"><input type="checkbox" checked={skipDupes} onChange={e => setSkipDupes(e.target.checked)} /> Skip {plan.dupes === 1 ? "it" : "them"}</label>
+              </span>
+            )}
+            <span>
+              {copies} cop{copies === 1 ? "y" : "ies"} ({money(send.reduce((s, r) => s + Number(r.value || 0) * (Number(r.qty) || 1), 0))} total value) ready ·{" "}
+              <button className="btn btn-small" disabled={!copies} onClick={async () => { if (await act({ action: "import-pool", tier: tier.id, rows: send }, r => `Imported ${r.added} cards into ${tier.name}${skipDupes && plan.dupes ? ` (skipped ${plan.dupes} already in your pools)` : ""}.`)) setRows(null); }}>Import</button>{" "}
+              <button className="link-button" onClick={() => setRows(null)}>Cancel</button>
+            </span>
+          </span>
+        );
+      })()}
       {err && <span className="error small">{err}</span>}
     </div>
   );

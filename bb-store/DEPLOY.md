@@ -140,6 +140,15 @@ Start in **test mode** so no real money moves.
 - [ ] You've opened a pack, sold a card back, and requested shipping yourself with test money.
 - [ ] Upgrade to Vercel Pro and Supabase Pro.
 
+## After updating the site: re-run packs.sql
+Some updates change the database functions as well as the site. Whenever one does (like the Nov 2026 fix that stops
+two pack openings from colliding), open Supabase → **SQL Editor**, paste all of `bb-store/supabase/packs.sql`, and click **Run**.
+It's safe to run again. It doesn't touch your cards, balances or tiers.
+
+**Checking the counts:** paste `bb-store/supabase/check-pools.sql` into the SQL Editor and run it. It's read-only. The first table shows
+how many cards each pack has in the pool, in vaults, shipping and removed. Every other result should be empty. If one isn't,
+it lists the cards or players whose records don't add up.
+
 ## When something goes wrong
 - **Store is empty:** check `SUPABASE_URL` / `SUPABASE_ANON_KEY`, and that items have quantity and price above 0.
 - **"Packs are coming soon":** `SUPABASE_SERVICE_ROLE_KEY` is missing, or `packs.sql` wasn't run.

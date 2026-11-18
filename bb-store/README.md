@@ -71,6 +71,14 @@ $30 one. k is picked so the average pull ≈ (1 − margin) × pack price. The t
 the odds of each value range and the resulting margin before anything is saved. It only makes hits rarer: if the pool
 is already above the target with every card at weight 1, that's as close as it gets.
 
+### How a card moves (and keeping counts right)
+`available` (in the pool) → pulled → `held` (in the player's vault) → sold back → `available` again in the same pool,
+or → `ship_requested` → `shipped`. Admins can also mark a pool card `retired` (removed) and restore it.
+Each move happens inside one database function (`open_pack`, `sell_back`, `request_shipment`), so a card can't be in two places
+and a player can't be charged without getting a card. Openings of the same pack queue up one at a time.
+A card in a vault can't be removed or moved to another pool from admin. Imports skip copies that are already in your
+pools or vaults (same name, set and grade) unless you untick **Skip them**. Run `supabase/check-pools.sql` any time to check the counts.
+
 ### Card photos and top-pulls images (on your phone)
 The photo is what players see when they pull a card, so every pool card should have one.
 - **📷 Snap card** (in a pool's add box) opens the camera. Claude reads the card (needs `ANTHROPIC_API_KEY`) and fills

@@ -162,12 +162,17 @@ export default async function handler(req, res) {
       if (b.value !== undefined) patch.market_value_cents = cents(b.value);
       if (b.weight !== undefined && Number(b.weight) > 0) patch.weight = Number(b.weight);
       if (b.tier_id) patch.tier_id = String(b.tier_id);
+      if (patch.tier_id && b.status) return res.status(400).json({ error: "Move or change status, not both at once." });
       if (b.buyback_percent !== undefined) patch.buyback_percent = intOrNull(b.buyback_percent);
       // Only cards sitting in a pool can be pulled out of it; vaulted cards belong to someone.
       if (b.status === "retired" || b.status === "available") patch.status = b.status;
       let q = db.from("pack_cards").update(patch).eq("id", String(b.id));
-      if (patch.status) q = q.in("status", ["available", "retired"]);
-      result = await q;
+      // A card in a player's vault (or shipping) can't be pulled from a pool or moved
+      // to another one; only cards sitting in a pool, or removed from one, can.
+      const guarded = patch.status || patch.tier_id;
+      if (guarded) q = q.in("status", ["available", "retired"]);
+      result = await q.select("id");
+      if (!result.error && guarded && !result.data?.length) return res.status(409).json({ error: "That card is in a player’s vault now, so it can’t be moved or removed." });
       break;
     }
 

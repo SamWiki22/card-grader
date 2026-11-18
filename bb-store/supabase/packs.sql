@@ -109,15 +109,20 @@ declare
   pull_id bigint;
 begin
   if p_roll < 0 or p_roll >= 1 then raise exception 'BAD_ROLL'; end if;
-  select * into t from pack_tiers where id = p_tier and active;
+  -- One opening per pack at a time: everyone opening this pack queues on the
+  -- tier row. (Locking the pool's cards one by one let two openings lock them
+  -- in different orders and deadlock.) NO KEY UPDATE still lets cards be added
+  -- to the pool meanwhile.
+  select * into t from pack_tiers where id = p_tier and active for no key update;
   if not found then raise exception 'TIER_UNAVAILABLE'; end if;
 
   select balance_cents into bal from profiles where user_id = p_user for update;
   if bal is null then raise exception 'NO_PROFILE'; end if;
   if bal < t.price_cents then raise exception 'INSUFFICIENT_FUNDS'; end if;
 
-  -- Lock the whole pool so two openings can't draw the same card.
-  perform 1 from pack_cards where tier_id = p_tier and status = 'available' for update;
+  -- Lock the pool's cards (in a fixed order) so an admin edit, removal or move
+  -- can't change a card between the draw and the update below.
+  perform 1 from pack_cards where tier_id = p_tier and status = 'available' order by id for update;
   select coalesce(sum(weight), 0) into total from pack_cards where tier_id = p_tier and status = 'available';
   if total <= 0 then raise exception 'POOL_EMPTY'; end if;
 
@@ -129,7 +134,9 @@ begin
   end loop;
 
   update pack_cards set status = 'held', owner_id = p_user, held_at = now(), updated_at = now()
-    where id = picked_id returning * into picked;
+    where id = picked_id and tier_id = p_tier and status = 'available' returning * into picked;
+  -- Never hand out a card that left the pool; the whole opening rolls back (no charge).
+  if picked.id is null then raise exception 'POOL_CHANGED'; end if;
   update profiles set balance_cents = balance_cents - t.price_cents where user_id = p_user;
   insert into ledger (user_id, kind, amount_cents, note, ref)
     values (p_user, 'pack_open', -t.price_cents, t.name || ' pack', picked.id);

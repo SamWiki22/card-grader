@@ -114,6 +114,7 @@ const MESSAGES = {
   INSUFFICIENT_FUNDS: "Not enough balance — add funds to keep going.",
   POOL_EMPTY: "This pack is being restocked. Try another tier!",
   TIER_UNAVAILABLE: "That pack isn’t available right now.",
+  POOL_CHANGED: "The pool changed while your pack was opening. You weren’t charged — try again.",
   NOT_YOURS: "That card isn’t in your vault anymore.",
   NO_CARDS: "Pick at least one card.",
   NO_PROFILE: "Please sign in again.",
