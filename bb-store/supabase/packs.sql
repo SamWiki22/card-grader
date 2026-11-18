@@ -427,3 +427,25 @@ alter table offers enable row level security;
 -- ── v6: owner + cost on pack pool cards (partner split, imports) ─────────
 alter table pack_cards add column if not exists owner text not null default '';
 alter table pack_cards add column if not exists cost_cents bigint not null default 0;
+
+-- ── v7: team accounts (username + password) ──────────────────────────────
+-- Owners (set in lib/auth.js) add and remove these in /admin/team.
+-- role: staff = store inventory, sales and offers; admin = everything except
+-- managing the team. Passwords are stored as scrypt hashes. Bumping
+-- session_version signs that person out everywhere.
+create table if not exists team_members (
+  id text primary key,
+  username text not null unique,
+  display_name text not null default '',
+  role text not null check (role in ('staff', 'admin')),
+  password_hash text not null,
+  session_version integer not null default 1,
+  disabled boolean not null default false,
+  failed_logins integer not null default 0,
+  locked_until timestamptz,
+  last_login_at timestamptz,
+  created_by text not null default '',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+alter table team_members enable row level security;

@@ -355,3 +355,20 @@
 .import-ready { display: flex; flex-direction: column; gap: 6px; flex-basis: 100%; }
 .import-dupes { color: var(--gold, #e0b04a); }
 .check-inline { display: inline-flex; gap: 6px; align-items: center; color: var(--text); font-weight: 600; }
+
+/* Team sign-in and team management */
+.admin-gate { max-width: 460px; }
+.admin-gate-box { background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; margin-top: 14px; }
+.team-login .link-button { align-self: flex-start; }
+.team-add { display: flex; flex-direction: column; gap: 10px; }
+.team-add-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.team-pw { display: flex; gap: 6px; align-items: center; }
+.team-pw .input { flex: 1; min-width: 0; }
+.team-list { display: flex; flex-direction: column; gap: 10px; }
+.team-card { background: var(--paper); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+.team-card.off { opacity: .6; }
+.team-top { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+.team-top select { max-width: 120px; }
+.team-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+@media (max-width: 760px) { .team-add-grid { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 480px) { .team-add-grid { grid-template-columns: 1fr; } .team-actions .btn { flex: 1 1 45%; } }

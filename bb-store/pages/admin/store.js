@@ -2,8 +2,9 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Layout from "../../components/Layout";
 import SignIn from "../../components/SignIn";
+import { AdminGate } from "../../components/TeamLogin";
 import TcgPicker from "../../components/TcgPicker";
-import { useMe, postJSON } from "../../lib/me";
+import { useMe, postJSON, accessOf } from "../../lib/me";
 import { GAMES, GAME_LABEL, money } from "../../lib/shared";
 
 const TYPES = { single: "Single", box: "Box", pack: "Pack" };
@@ -90,7 +91,7 @@ export default function Inventory() {
     if (!r.ok) return setDenied(d.error || "Not allowed");
     setItems(d.items);
   }, []);
-  useEffect(() => { if (me.user) load(); }, [me.user, load]);
+  useEffect(() => { if (me.user || me.team) load(); }, [me.user, me.team, load]);
 
   const shown = useMemo(() => {
     if (!items) return [];
@@ -145,7 +146,7 @@ export default function Inventory() {
     setMsg(`Turned ${fixed} sideways photo${fixed === 1 ? "" : "s"} ${dir < 0 ? "left" : "right"}. If any came out upside-down, use that card’s ⟲ ⟳ buttons.`);
   }
 
-  if (!me.loading && !me.user) return <Layout title="Inventory"><section className="wrap section"><p>Sign in with an admin or staff email.</p></section><SignIn onClose={() => {}} /></Layout>;
+  if (!me.loading && !me.user && !me.team) return <Layout title="Inventory"><AdminGate /></Layout>;
   if (denied) return <Layout title="Inventory"><section className="wrap section"><p className="error">{denied}</p></section></Layout>;
   if (!items) return <Layout title="Inventory"><section className="wrap section"><p className="muted">Loading…</p></section></Layout>;
 
@@ -159,7 +160,7 @@ export default function Inventory() {
           <h1 className="page-title">Inventory</h1>
           <span className="admin-links">
             <Link href="/admin/offers" className="btn btn-small btn-ghost-dark">Offers{me.new_customer_offers ? ` (${me.new_customer_offers} new)` : ""} →</Link>
-            {me.user?.admin && <><Link href="/admin/sales" className="btn btn-small btn-ghost-dark">Sales →</Link> <Link href="/admin/packs" className="btn btn-small btn-ghost-dark">Packs admin →</Link></>}
+            {accessOf(me).admin && <><Link href="/admin/sales" className="btn btn-small btn-ghost-dark">Sales →</Link> <Link href="/admin/packs" className="btn btn-small btn-ghost-dark">Packs admin →</Link></>}
           </span>
         </div>
         <div className="inv-stats">

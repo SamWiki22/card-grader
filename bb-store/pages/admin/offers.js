@@ -2,6 +2,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import Layout from "../../components/Layout";
 import SignIn from "../../components/SignIn";
+import { AdminGate } from "../../components/TeamLogin";
 import { useMe, postJSON } from "../../lib/me";
 import { money } from "../../lib/shared";
 
@@ -21,7 +22,7 @@ export default function Offers() {
     if (!r.ok) return setDenied(d.error || "Not allowed");
     setOffers(d.offers);
   }, []);
-  useEffect(() => { if (me.user) load(); }, [me.user, load]);
+  useEffect(() => { if (me.user || me.team) load(); }, [me.user, me.team, load]);
 
   async function act(body, ok) {
     setMsg("");
@@ -29,7 +30,7 @@ export default function Offers() {
     catch (e) { setMsg(`Error: ${e.message}`); }
   }
 
-  if (!me.loading && !me.user) return <Layout title="Offers"><section className="wrap section"><p>Sign in with an admin or staff email.</p></section><SignIn onClose={() => {}} /></Layout>;
+  if (!me.loading && !me.user && !me.team) return <Layout title="Offers"><AdminGate /></Layout>;
   if (denied) return <Layout title="Offers"><section className="wrap section"><p className="error">{denied}</p></section></Layout>;
   if (!offers) return <Layout title="Offers"><section className="wrap section"><p className="muted">Loading…</p></section></Layout>;
 

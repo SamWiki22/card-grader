@@ -2,12 +2,16 @@ import Head from "next/head";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import { useCart } from "../lib/cart";
-import { useMe } from "../lib/me";
+import { useState } from "react";
+import { useMe, accessOf } from "../lib/me";
 import { centsToMoney } from "../lib/shared";
+import TeamLogin, { secretTap } from "./TeamLogin";
 
 export default function Layout({ title, description, children }) {
   const { count, ready } = useCart();
   const me = useMe();
+  const access = accessOf(me);
+  const [teamLogin, setTeamLogin] = useState(false);
   const { pathname, query } = useRouter();
   const fullTitle = title ? `${title} · Bearded Bear TCG` : "Bearded Bear TCG — Singles & Sealed";
   const active = c => (pathname === "/shop" && query.category === c ? "nav-link active" : "nav-link");
@@ -22,7 +26,7 @@ export default function Layout({ title, description, children }) {
       </Head>
       <header className="site-header">
         <div className="wrap header-row">
-          <Link href="/" className="brand">
+          <Link href="/" className="brand" onClick={e => secretTap(e, () => setTeamLogin(true))}>
             <img src="/logo.png" alt="" width="44" height="44" />
             <span>Bearded Bear <b>TCG</b></span>
           </Link>
@@ -31,7 +35,9 @@ export default function Layout({ title, description, children }) {
             <Link href="/shop?category=singles" className={active("singles")}>Singles</Link>
             <Link href="/shop?category=sealed" className={active("sealed")}>Sealed</Link>
             <Link href="/packs" className={pathname.startsWith("/packs") ? "nav-link active nav-packs" : "nav-link nav-packs"}>Packs</Link>
-            {me.user?.staff && <Link href="/admin/store" className={pathname.startsWith("/admin") ? "nav-link active" : "nav-link"}>{me.user.admin ? "Admin" : "Inventory"}{me.new_customer_offers ? ` (${me.new_customer_offers})` : ""}</Link>}
+            {access.staff && <Link href="/admin/store" className={pathname.startsWith("/admin") ? "nav-link active" : "nav-link"}>{access.admin ? "Admin" : "Inventory"}{me.new_customer_offers ? ` (${me.new_customer_offers})` : ""}</Link>}
+            {access.owner && <Link href="/admin/team" className={pathname === "/admin/team" ? "nav-link active" : "nav-link"}>Team</Link>}
+            {me.team && !me.user && <button className="nav-link link-button" onClick={me.signOut} title={`Signed in as ${me.team.username}`}>Sign out</button>}
             {me.user && <Link href="/vault" className={pathname === "/vault" ? "nav-link active" : "nav-link"}>Vault</Link>}
           </nav>
           {me.user && <Link href="/vault" className="bal-chip" title="Pack balance">{centsToMoney(me.balance_cents)}</Link>}
@@ -43,6 +49,7 @@ export default function Layout({ title, description, children }) {
         </div>
       </header>
       <main>{children}</main>
+      {teamLogin && <TeamLogin onClose={() => setTeamLogin(false)} />}
       <footer className="site-footer">
         <div className="wrap footer-row">
           <div className="brand muted"><img src="/logo.png" alt="" width="32" height="32" /> Bearded Bear TCG</div>

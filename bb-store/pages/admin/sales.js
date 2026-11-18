@@ -2,6 +2,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Layout from "../../components/Layout";
 import SignIn from "../../components/SignIn";
+import { AdminGate } from "../../components/TeamLogin";
 import { useMe, postJSON } from "../../lib/me";
 import { money } from "../../lib/shared";
 
@@ -36,7 +37,7 @@ export default function Sales() {
     if (!r.ok) return setDenied(d.error || "Not allowed");
     setSales(d.sales);
   }, [days]);
-  useEffect(() => { if (me.user) load(); }, [me.user, load]);
+  useEffect(() => { if (me.user || me.team) load(); }, [me.user, me.team, load]);
 
   const byDay = useMemo(() => {
     const m = new Map();
@@ -89,7 +90,7 @@ export default function Sales() {
     document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
   }
 
-  if (!me.loading && !me.user) return <Layout title="Sales"><section className="wrap section"><p>Sign in with an admin email.</p></section><SignIn onClose={() => {}} /></Layout>;
+  if (!me.loading && !me.user && !me.team) return <Layout title="Sales"><AdminGate /></Layout>;
   if (denied) return <Layout title="Sales"><section className="wrap section"><p className="error">{denied}</p></section></Layout>;
   if (!sales) return <Layout title="Sales"><section className="wrap section"><p className="muted">Loading…</p></section></Layout>;
 

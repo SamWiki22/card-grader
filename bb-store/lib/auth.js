@@ -3,6 +3,7 @@
 // the browser (the inventory tables accept writes with the anon key).
 import { createClient } from "@supabase/supabase-js";
 import { db } from "./catalog";
+import { getTeamUser, clearTeamCookie } from "./team";
 
 const AT = "bb_at";
 const RT = "bb_rt";
@@ -32,7 +33,7 @@ export function setSession(res, session) {
   res.setHeader("Set-Cookie", [cookie(AT, session.access_token, session.expires_in || 3600), cookie(RT, session.refresh_token, 60 * 60 * 24 * 30)]);
 }
 export function clearSession(res) {
-  res.setHeader("Set-Cookie", [cookie(AT, "", 0), cookie(RT, "", 0)]);
+  res.setHeader("Set-Cookie", [cookie(AT, "", 0), cookie(RT, "", 0), clearTeamCookie()]);
 }
 
 // Emails a sign-in link (Supabase's default email) — or a 6-digit code if the
@@ -79,14 +80,26 @@ export async function getUser(req, res) {
 
 const emailIn = (user, list) => {
   const emails = (list || "").toLowerCase().split(",").map(s => s.trim()).filter(Boolean);
-  return !!user?.email && emails.includes(user.email.toLowerCase());
+  return !!user?.email && !user.team && emails.includes(user.email.toLowerCase());
 };
-// Staff (STAFF_EMAILS) can manage store inventory only; admins can do everything.
-export const isStaff = user => emailIn(user, process.env.ADMIN_EMAILS) || emailIn(user, process.env.STAFF_EMAILS);
 
+// Owners have master control: everything admins can do, plus adding and
+// removing team members in /admin/team. They sign in with their email code.
+// Built in so they can never be locked out; OWNER_EMAILS in Vercel can add more.
+const BUILT_IN_OWNERS = "illestcollect@gmail.com,beardedbeartcg@gmail.com";
+export const isOwner = user => emailIn(user, BUILT_IN_OWNERS) || emailIn(user, process.env.OWNER_EMAILS);
+
+// Admins: owners, ADMIN_EMAILS, and team members with the admin role.
+// Staff (store inventory, sales, offers): STAFF_EMAILS and team members with the staff role.
 export function isAdmin(user) {
-  const admins = (process.env.ADMIN_EMAILS || "").toLowerCase().split(",").map(s => s.trim()).filter(Boolean);
-  return !!user?.email && admins.includes(user.email.toLowerCase());
+  if (!user) return false;
+  if (user.team) return user.role === "admin";
+  return isOwner(user) || emailIn(user, process.env.ADMIN_EMAILS);
+}
+export function isStaff(user) {
+  if (!user) return false;
+  if (user.team) return user.role === "admin" || user.role === "staff";
+  return isAdmin(user) || emailIn(user, process.env.STAFF_EMAILS);
 }
 
 // API helpers: respond with an error and return null when not allowed.
@@ -96,18 +109,18 @@ export async function requireUser(req, res) {
   if (!user) { res.status(401).json({ error: "Please sign in." }); return null; }
   return user;
 }
-export async function requireStaff(req, res) {
-  const user = await requireUser(req, res);
-  if (!user) return null;
-  if (!isStaff(user)) { res.status(403).json({ error: "Staff only." }); return null; }
-  return user;
+// Team pages accept a username/password team session or an email sign-in.
+async function requireRole(req, res, allowed, deny) {
+  if (!packsReady()) { res.status(503).json({ error: "Not set up yet." }); return null; }
+  const [team, user] = await Promise.all([getTeamUser(req), getUser(req, res)]);
+  const who = [user, team].find(u => u && allowed(u));
+  if (who) return who;
+  res.status(team || user ? 403 : 401).json({ error: team || user ? deny : "Please sign in." });
+  return null;
 }
-export async function requireAdmin(req, res) {
-  const user = await requireUser(req, res);
-  if (!user) return null;
-  if (!isAdmin(user)) { res.status(403).json({ error: "Admins only." }); return null; }
-  return user;
-}
+export const requireStaff = (req, res) => requireRole(req, res, isStaff, "Staff only.");
+export const requireAdmin = (req, res) => requireRole(req, res, isAdmin, "Admins only.");
+export const requireOwner = (req, res) => requireRole(req, res, isOwner, "Only the owners can manage the team.");
 
 // Turns "INSUFFICIENT_FUNDS" style database exceptions into shopper-friendly text.
 const MESSAGES = {

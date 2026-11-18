@@ -91,6 +91,18 @@ Players submit a card from **Sell** with photos, grade and an optional TCGplayer
 4. When it arrives and matches the photos, pick the pool and click **Card arrived — pay**. The player is credited
    and the card joins the pool with their photo. If it doesn't match, click **Card not as described**.
 
+### Team access (who can get into admin)
+- **Owners** (master control): illestcollect@gmail.com and beardedbeartcg@gmail.com are built in, so they can never be
+  locked out. Sign in with your email code. Owners can do everything, and only owners can open **/admin/team**.
+- **Team accounts:** in **/admin/team**, add someone with a username, a password (tap **Suggest** for one) and an access level:
+  - **Staff:** store inventory, recording sales and offers.
+  - **Admin:** everything except managing the team.
+- **Signing in:** team members tap the **logo at the top left 5 times** (or open any /admin page) and enter their username and password.
+- **Managing accounts:** from /admin/team you can reset a password, change access, **Sign out everywhere**, **Disable** or remove someone.
+  Changes apply right away, even on a phone that's already signed in. 5 wrong passwords lock that account for 15 minutes.
+- **Before first use:** re-run `supabase/packs.sql` once, since it adds the team table.
+- The older `ADMIN_EMAILS` / `STAFF_EMAILS` settings in Vercel still work. You can leave them, or move people to team accounts.
+
 ### Adding inventory (staff)
 Inventory lives at `/admin/store` (the **Admin** / **Inventory** link in the header).
 - Give helpers inventory-only access with `STAFF_EMAILS` in Vercel (comma-separated). They can add, edit,

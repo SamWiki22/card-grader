@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Layout from "../../components/Layout";
 import SignIn from "../../components/SignIn";
+import { AdminGate } from "../../components/TeamLogin";
 import TcgPicker from "../../components/TcgPicker";
 import Modal from "../../components/Modal";
 import PhotoPass from "../../components/PhotoPass";
@@ -67,7 +68,7 @@ export default function AdminPacks() {
     setData(d);
     setTierId(t => t || d.tiers.find(x => x.game === "pokemon")?.id || d.tiers[0]?.id || "");
   }, []);
-  useEffect(() => { if (me.user) load(); }, [me.user, load]);
+  useEffect(() => { if (me.user || me.team) load(); }, [me.user, me.team, load]);
 
   async function act(body, okMsg) {
     setMsg("");
@@ -80,9 +81,7 @@ export default function AdminPacks() {
   }
   const pick = (game, onPick, opts = {}) => setPicker({ game, ...opts, onPick: t => { setPicker(null); onPick(t); } });
 
-  if (!me.loading && !me.user) {
-    return <Layout title="Admin"><section className="wrap section"><p>Sign in with an admin email.</p></section><SignIn onClose={() => {}} /></Layout>;
-  }
+  if (!me.loading && !me.user && !me.team) return <Layout title="Admin"><AdminGate /></Layout>;
   if (denied) return <Layout title="Admin"><section className="wrap section"><p className="error">{denied}</p></section></Layout>;
   if (!data) return <Layout title="Admin"><section className="wrap section"><p className="muted">Loading…</p></section></Layout>;
 
