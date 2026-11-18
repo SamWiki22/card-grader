@@ -372,3 +372,28 @@
 .team-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 @media (max-width: 760px) { .team-add-grid { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 480px) { .team-add-grid { grid-template-columns: 1fr; } .team-actions .btn { flex: 1 1 45%; } }
+
+/* Inventory cards: keep the photo inside its box (iPhone Safari let tall photos
+   spill over the fields), and on phones show one card per row, photo beside the fields. */
+.inv-photo { overflow: hidden; }
+.inv-photo img { position: absolute; inset: 0; }
+@media (max-width: 700px) {
+  .inv-grid { grid-template-columns: 1fr; gap: 10px; }
+  .inv-card { flex-direction: row; }
+  .inv-photo { width: 118px; flex: none; aspect-ratio: auto; min-height: 190px; }
+  .inv-select { top: 6px; left: 6px; }
+  .inv-rotate { top: 6px; right: 6px; bottom: auto; flex-direction: column; gap: 4px; }
+  .inv-rotate button { width: 34px; height: 34px; font-size: 17px; }
+  .inv-status { top: auto; bottom: 6px; left: 6px; right: auto; font-size: 11px; }
+  .inv-fields { flex: 1; min-width: 0; padding: 8px 10px; }
+  .inv-row .money-input .input { max-width: none; }
+  .inv-cost { max-width: 90px; }
+}
+/* iPhone zooms in on any text box under 16px; keep them at 16px on phones. */
+@media (max-width: 700px) {
+  input.input, select.input, textarea.input { font-size: 16px; }
+}
+@media (max-width: 700px) {
+  .inv-fields .inv-row > select { flex: 1 1 auto; min-width: 0; }
+  .inv-fields .inv-row > input[aria-label="Condition"] { flex: 0 0 72px; }
+}
