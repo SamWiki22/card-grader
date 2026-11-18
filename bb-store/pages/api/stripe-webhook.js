@@ -1,5 +1,6 @@
 import { stripe } from "../../lib/stripe";
 import { db } from "../../lib/catalog";
+import { changeQty } from "../../lib/stock";
 
 // Stripe needs the raw body to verify the signature.
 export const config = { api: { bodyParser: false } };
@@ -64,15 +65,11 @@ export default async function handler(req, res) {
       if (saleError?.code === "23505") continue;
       if (saleError) throw saleError;
 
-      // Decrement with a compare-and-set so a sale rung up in the shop at the
-      // same moment isn't overwritten.
-      for (let attempt = 0; attempt < 5 && item; attempt++) {
-        const { data: cur } = await db.from("items").select("quantity").eq("id", itemId).maybeSingle();
-        if (!cur) break;
-        const { data: updated } = await db.from("items")
-          .update({ quantity: Math.max(0, cur.quantity - qty) })
-          .eq("id", itemId).eq("quantity", cur.quantity).select("id");
-        if (updated?.length) break;
+      // Decrement with a compare-and-set so a sale rung up at the booth (BB
+      // Inventory) at the same moment isn't overwritten.
+      if (item) {
+        try { await changeQty(db, itemId, -qty); }
+        catch (e) { console.error(`STOCK NOT REDUCED for website sale stripe_${session.id}_${i} (${item.name} ×${qty}):`, e.message); }
       }
     }
     // An offer bought through its link is done.

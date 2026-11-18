@@ -108,9 +108,24 @@ or create one at console.anthropic.com → API Keys). Each photo costs roughly 1
 - **Sales** page (`/admin/sales`, admins only): today's total, day-by-day revenue and profit, Sam's and Bear/Umer's
   shares (Shared items split 50/50), every sale with its photo, **Undo** (puts the stock back), and CSV export.
 
-### Retiring the old BB Inventory app
-Once you don't need it, delete its project in Vercel, then run `supabase/lock-down.sql` in the Supabase SQL Editor.
-That closes the old app's open access to your inventory tables; the website keeps working.
+### Using BB Inventory at the booth alongside the website
+BB Inventory and the website share the same inventory and sales tables in Supabase, so:
+- **Sold at the booth** (BB Inventory → Sell): stock goes down and the item comes off the website once it hits 0.
+- **Sold on the website:** stock goes down in BB Inventory within seconds, and the sale shows in its sales history as
+  "Website (buyer name)". Pull that item from the booth.
+- **Restocked** (BB Inventory + / − or Edit): the website shows the new stock right away.
+
+Every stock change from either app adds or subtracts. It only saves if nobody else changed the number in between, and retries
+if they did, so a booth sale and a website sale at the same moment are both counted.
+(Before the Nov 2026 update, BB Inventory saved "set stock to the number on my screen", which could erase a website sale.
+**Redeploy BB Inventory too:** in Vercel, open the BB Inventory project → Deployments → ⋯ → Redeploy, after merging.)
+
+**Don't run `supabase/lock-down.sql` while you use BB Inventory.** It switches off BB Inventory's access to the inventory.
+
+**Keep the BB Inventory link private.** BB Inventory has no login: anyone with its link can change stock and prices, and
+those changes show on the website. Don't post the link, and remove people's access by changing the Supabase anon key if it leaks.
+The website's **/admin/store** (Inventory, 📷 Record sales, Sales) does the same jobs behind a sign-in. Staff get access through
+`STAFF_EMAILS`, so it's the safer option for helpers.
 
 ## Step 6 — Your own domain (optional)
 1. In Vercel, open the project, go to **Settings → Domains**, and add e.g. `beardedbeartcg.com`.
