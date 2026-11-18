@@ -5,7 +5,9 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
   const user = await requireUser(req, res);
   if (!user) return;
-  const { data, error } = await db.rpc("sell_back", { p_user: user.id, p_card: String(req.body?.card || "")});
+  // to: "pool" (default) = back into its pack pool; "store" = Bearded Bear buys it for the store.
+  const toStore = req.body?.to === "store";
+  const { data, error } = await db.rpc(toStore ? "sell_to_store" : "sell_back", { p_user: user.id, p_card: String(req.body?.card || "") });
   if (error) {
     const f = friendlyError(error);
     if (f) return res.status(f.status).json({ error: f.message });

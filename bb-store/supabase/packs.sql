@@ -449,3 +449,81 @@ create table if not exists team_members (
   updated_at timestamptz not null default now()
 );
 alter table team_members enable row level security;
+
+-- ── v8: password sign-in, players adding their own cards to the vault, selling to the store ──
+
+-- Shoppers can log in with email + password (the email is checked once, with a code, when the account is made).
+alter table profiles add column if not exists has_password boolean not null default false;
+-- Wrong-password counter per email: 5 misses lock that email's password login for 15 minutes.
+create table if not exists login_failures (
+  email text primary key,
+  fails integer not null default 0,
+  locked_until timestamptz
+);
+alter table login_failures enable row level security;
+
+-- submissions.kind: 'sale' = player wants an offer (as before); 'vault' = player is mailing
+-- the card in to keep in their vault. A vault card goes straight to 'accepted' (mail it in),
+-- then 'vaulted' once it arrives and we check it.
+alter table submissions add column if not exists kind text not null default 'sale';
+
+-- Card arrived and matches the photos: it lands in the player's vault, held for them.
+-- p_tier is the pack pool it joins if they later sell it into a pool.
+create or replace function vault_intake(p_id text, p_tier text, p_value bigint, p_card_id text)
+returns jsonb language plpgsql as $$
+declare
+  s submissions;
+begin
+  select * into s from submissions where id = p_id and kind = 'vault' and status = 'accepted' for update;
+  if not found then raise exception 'NOT_ACCEPTED'; end if;
+  if not exists (select 1 from pack_tiers where id = p_tier) then raise exception 'TIER_UNAVAILABLE'; end if;
+  if p_value < 0 then raise exception 'BAD_AMOUNT'; end if;
+
+  insert into pack_cards (id, tier_id, name, set_name, grade, market_value_cents, image,
+                          tcg_category_id, tcg_group_id, tcg_product_id, tcg_subtype,
+                          status, owner_id, held_at)
+  values (p_card_id, p_tier, s.name || case when s.card_number <> '' then ' ' || s.card_number else '' end,
+          s.set_name, s.grade, p_value, s.photo_front,
+          s.tcg_category_id, s.tcg_group_id, s.tcg_product_id, s.tcg_subtype,
+          'held', s.user_id, now());
+  update submissions set status = 'vaulted', value_cents = p_value, card_id = p_card_id, updated_at = now() where id = p_id;
+  return jsonb_build_object('card_id', p_card_id);
+end $$;
+
+-- Sell a vaulted card to the store instead of into a pack pool: same buyback rate,
+-- but the card leaves the pack system and becomes a store single (quantity 1,
+-- priced at its market value, cost = what we paid).
+create or replace function sell_to_store(p_user uuid, p_card text)
+returns jsonb language plpgsql as $$
+declare
+  card pack_cards;
+  t pack_tiers;
+  pct integer;
+  amount bigint;
+  bal bigint;
+  item_id text;
+begin
+  select * into card from pack_cards where id = p_card and owner_id = p_user and status = 'held' for update;
+  if not found then raise exception 'NOT_YOURS'; end if;
+  select * into t from pack_tiers where id = card.tier_id;
+  pct := buyback_percent_for(card.market_value_cents, card.buyback_percent);
+  amount := floor(card.market_value_cents * pct / 100.0);
+  item_id := 'vault-' || card.id;
+
+  update pack_cards set status = 'sold_to_store', owner_id = null, held_at = null, updated_at = now() where id = p_card;
+  insert into items (id, type, game, owner, name, set_name, condition, quantity, cost, price, notes, photo,
+                     tcg_category_id, tcg_group_id, tcg_product_id, tcg_subtype, price_source)
+  values (item_id, 'single', coalesce(t.game, 'other'), '', card.name, card.set_name, card.grade, 1,
+          round(amount / 100.0, 2), round(card.market_value_cents / 100.0, 2), 'Bought from a player''s vault', card.image,
+          card.tcg_category_id, card.tcg_group_id, card.tcg_product_id, card.tcg_subtype,
+          case when card.price_source = 'tcgplayer' then 'tcgplayer' else 'manual' end);
+  update profiles set balance_cents = balance_cents + amount where user_id = p_user returning balance_cents into bal;
+  insert into ledger (user_id, kind, amount_cents, note, ref)
+    values (p_user, 'buyback', amount, 'Sold to Bearded Bear store (' || pct || '%): ' || card.name, card.id);
+  return jsonb_build_object('amount_cents', amount, 'percent', pct, 'balance_cents', bal, 'item_id', item_id);
+end $$;
+
+revoke all on function vault_intake(text, text, bigint, text) from public, anon, authenticated;
+revoke all on function sell_to_store(uuid, text) from public, anon, authenticated;
+grant execute on function vault_intake(text, text, bigint, text) to service_role;
+grant execute on function sell_to_store(uuid, text) to service_role;

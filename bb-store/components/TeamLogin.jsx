@@ -40,7 +40,7 @@ function TeamLoginForm({ onDone, autoFocus = true }) {
         <button className="btn" disabled={busy}>{busy ? "Signing in…" : "Sign in"}</button>
         <button type="button" className="link-button small" onClick={() => setEmail(true)}>Owner? Sign in with your email code instead</button>
       </form>
-      {email && <SignIn onClose={() => { setEmail(false); onDone?.(); }} reason="Owners and email-listed admins sign in with a code sent to their email." />}
+      {email && <SignIn startMode="link" onClose={() => { setEmail(false); onDone?.(); }} reason="Owners and email-listed admins sign in with a code sent to their email." />}
     </>
   );
 }

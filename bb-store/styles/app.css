@@ -313,3 +313,14 @@
 @keyframes float-tilt { 50% { transform: rotate(2deg) translateY(-10px); } }
 .stage .foil-pack { animation-name: float-tilt; }
 .app-head h1 { background: linear-gradient(180deg, #fff 30%, #a9bbd6); -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+/* Sign-in: log in / create account tabs, password row */
+.auth-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; border: 1px solid var(--line); border-radius: 12px; }
+.auth-tabs button { border: 0; background: transparent; color: var(--muted, var(--dim)); font-weight: 700; padding: 10px; border-radius: 9px; }
+.auth-tabs button.on { background: rgba(79,195,182,.16); color: var(--text); box-shadow: inset 0 0 0 1px rgba(79,195,182,.5); }
+.pw-row { display: flex; gap: 8px; align-items: center; }
+.pw-row .input { flex: 1; min-width: 0; }
+.auth-links { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 12px; }
+.sell-choices { display: flex; flex-direction: column; gap: 10px; }
+.incoming { margin: 6px 0 18px; }
+.incoming h2 { font-size: 13px; margin-bottom: 4px; }

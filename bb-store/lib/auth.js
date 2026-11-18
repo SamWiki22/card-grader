@@ -38,9 +38,41 @@ export function clearSession(res) {
 
 // Emails a sign-in link (Supabase's default email) — or a 6-digit code if the
 // email template includes {{ .Token }}. The link lands on /auth/callback.
-export async function sendCode(email, redirectTo) {
-  const { error } = await authClient().auth.signInWithOtp({ email, options: { shouldCreateUser: true, emailRedirectTo: redirectTo } });
+export async function sendCode(email, redirectTo, createUser = true) {
+  const { error } = await authClient().auth.signInWithOtp({ email, options: { shouldCreateUser: createUser, emailRedirectTo: redirectTo } });
   if (error) throw error;
+}
+
+// ── Email + password ──────────────────────────────────────────────────────
+export const MIN_PASSWORD = 8;
+const MAX_FAILS = 5;
+const LOCK_MINUTES = 15;
+
+// Log in with email + password. 5 wrong passwords lock that email's password
+// login for 15 minutes (the email code still works).
+export async function passwordLogin(email, password) {
+  const { data: f } = await db.from("login_failures").select("fails,locked_until").eq("email", email).maybeSingle();
+  if (f?.locked_until && new Date(f.locked_until) > new Date()) {
+    const mins = Math.ceil((new Date(f.locked_until) - Date.now()) / 60000);
+    throw Object.assign(new Error(`Too many wrong passwords. Try again in ${mins} minute${mins === 1 ? "" : "s"}, or use “Forgot password”.`), { status: 429 });
+  }
+  const { data, error } = await authClient().auth.signInWithPassword({ email, password });
+  if (error || !data?.session) {
+    const fails = (f?.fails || 0) + 1;
+    await db.from("login_failures").upsert(fails >= MAX_FAILS
+      ? { email, fails: 0, locked_until: new Date(Date.now() + LOCK_MINUTES * 60000).toISOString() }
+      : { email, fails, locked_until: null });
+    throw Object.assign(new Error("Wrong email or password."), { status: 401 });
+  }
+  if (f) await db.from("login_failures").delete().eq("email", email);
+  return data;
+}
+
+// Set (or change) a signed-in shopper's password.
+export async function setPassword(userId, password) {
+  const { error } = await authClient().auth.admin.updateUserById(userId, { password });
+  if (error) throw error;
+  await db.from("profiles").update({ has_password: true }).eq("user_id", userId);
 }
 
 export async function verifyCode(email, token) {

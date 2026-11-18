@@ -14,7 +14,10 @@ const STATUS = {
   paid: { label: "Paid", tone: "done" },
   declined: { label: "You declined", tone: "off" },
   rejected: { label: "Not accepted", tone: "off" },
+  vaulted: { label: "In your vault", tone: "done" },
 };
+// Cards mailed in to keep in the vault use a different label while we wait for them.
+const statusOf = s => (s.kind === "vault" && s.status === "accepted" ? { label: "Mail it in", tone: "act" } : STATUS[s.status]);
 
 // Shrink a phone photo to max 1400px JPEG so uploads stay quick.
 function compress(file) {
@@ -64,15 +67,15 @@ export default function Sell() {
     <AppShell title="Sell your cards">
       <div className="app-head">
         <h1>Sell to the Bear</h1>
-        <p className="dim">Send us your cards for pack credit. Every card we buy goes into the packs for someone else to pull.</p>
+        <p className="dim">Send us your cards for pack credit, or mail them in to keep in your vault. Vault cards can be sold back to us or into a pack pool any time.</p>
       </div>
 
-      <ol className="steps">
+      {showForm !== "vault" && <ol className="steps">
         <li><b>Submit</b><span>Photos, name and grade.</span></li>
         <li><b>Get an offer</b><span>We price it against TCGplayer and recent sales.</span></li>
         <li><b>Ship it</b><span>Accept, then mail the card in with your code.</span></li>
         <li><b>Get paid</b><span>Credit lands in your balance when it arrives.</span></li>
-      </ol>
+      </ol>}
 
       {!me.loading && !me.user ? (
         <div className="app-empty small-empty">
@@ -80,16 +83,23 @@ export default function Sell() {
           {me.ready && <button className="buy-btn narrow" onClick={() => setSignin(true)}><span>Sign in</span></button>}
         </div>
       ) : showForm ? (
-        <SubmitForm onCancel={() => setShowForm(false)} onDone={async id => { setShowForm(false); setMsg(`Got it! Submission ${id} is under review — we’ll post an offer here.`); await load(); }} />
+        <SubmitForm kind={showForm} onCancel={() => setShowForm(false)} onDone={async (id, kind) => {
+          setShowForm(false);
+          setMsg(kind === "vault" ? `Added! Mail the card in with code ${id} (address below). It’s in your vault now, locked until it arrives.` : `Got it! Submission ${id} is under review — we’ll post an offer here.`);
+          await load();
+        }} />
       ) : (
-        <button className="buy-btn" onClick={() => { setShowForm(true); setMsg(""); }}><span>+ Submit a card</span></button>
+        <div className="sell-choices">
+          <button className="buy-btn" onClick={() => { setShowForm("sale"); setMsg(""); }}><span>+ Get an offer</span></button>
+          <button className="ghost-btn" onClick={() => { setShowForm("vault"); setMsg(""); }}>+ Add a card to my vault</button>
+        </div>
       )}
 
       {msg && <p className="app-banner" style={{ marginTop: 14 }}>{msg}</p>}
 
       {accepted.length > 0 && (
         <section className="ship-to">
-          <h2>Ship accepted cards to</h2>
+          <h2>Mail these cards to</h2>
           {data.shipTo.length ? <address>{data.shipTo.map((l, i) => <span key={i}>{l}<br /></span>)}</address> : <p className="dim">We’ll email you our shipping address.</p>}
           <p className="dim small">Put each card in a sleeve and toploader (or keep slabs in a protective sleeve). Write the code on a note inside: {accepted.map(s => s.id).join(", ")}.</p>
         </section>
@@ -101,10 +111,10 @@ export default function Sell() {
           {!data ? <p className="dim">Loading…</p> : !subs.length ? <p className="dim">Nothing submitted yet.</p> : (
             <ul className="sub-list">
               {subs.map(s => (
-                <li key={s.id} className={`sub-item tone-${STATUS[s.status]?.tone}`}>
+                <li key={s.id} className={`sub-item tone-${statusOf(s)?.tone}`}>
                   <img src={`/api/submission-photo/${encodeURIComponent(s.id)}`} alt="" />
                   <div className="sub-body">
-                    <div className="sub-top"><b>{s.name}</b><span className="sub-status">{STATUS[s.status]?.label || s.status}</span></div>
+                    <div className="sub-top"><b>{s.name}</b><span className="sub-status">{statusOf(s)?.label || s.status}</span></div>
                     <div className="dim small">{[GAME_SHORT[s.game], s.set_name, s.card_number, s.grade].filter(Boolean).join(" · ")}</div>
                     <div className="dim small">Code <b className="code">{s.id}</b>{s.asking_cents ? ` · You asked ${centsToMoney(s.asking_cents)}` : ""}</div>
                     {s.offer_cents != null && ["offered", "accepted", "paid"].includes(s.status) && (
@@ -130,8 +140,9 @@ export default function Sell() {
   );
 }
 
-function SubmitForm({ onCancel, onDone }) {
-  const [f, setF] = useState({ game: "pokemon", name: "", set_name: "", card_number: "", grade: "Raw NM", asking: "", note: "", photo_front: "", photo_back: "", tcg: null });
+function SubmitForm({ kind = "sale", onCancel, onDone }) {
+  const vault = kind === "vault";
+  const [f, setF] = useState({ kind, game: "pokemon", name: "", set_name: "", card_number: "", grade: "Raw NM", asking: "", note: "", photo_front: "", photo_back: "", tcg: null });
   const [picker, setPicker] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -147,12 +158,15 @@ function SubmitForm({ onCancel, onDone }) {
     e.preventDefault();
     if (!f.photo_front) return setError("Add a photo of the front of the card.");
     setBusy(true); setError("");
-    try { const r = await postJSON("/api/submissions", f); onDone(r.id); }
+    try { const r = await postJSON("/api/submissions", f); onDone(r.id, kind); }
     catch (err) { setError(err.message); setBusy(false); }
   }
 
   return (
     <form className="submit-form" onSubmit={submit}>
+      <p className="dim small">{vault
+        ? "Add a card you own. It shows in your vault right away, locked until it reaches us and we check it matches the photos. Then you can keep it, ship it home, or sell it to us or into a pack pool."
+        : "Tell us about the card and we’ll make you an offer in pack credit."}</p>
       <div className="seg" role="group" aria-label="Game">
         {FOCUS.map(g => (
           <button type="button" key={g.id} className={`seg-btn${f.game === g.id ? " on" : ""}`} style={{ "--g": GAME_COLOR[g.id] }} onClick={() => setF({ ...f, game: g.id, tcg: null })}>
@@ -175,7 +189,7 @@ function SubmitForm({ onCancel, onDone }) {
           <input className="input" list="grades" {...bind("grade")} />
           <datalist id="grades">{GRADE_OPTIONS.map(g => <option key={g} value={g} />)}</datalist>
         </label>
-        <label className="field">Asking price (optional)<input className="input" type="number" min="0" step="0.01" placeholder="$" {...bind("asking")} /></label>
+        {!vault && <label className="field">Asking price (optional)<input className="input" type="number" min="0" step="0.01" placeholder="$" {...bind("asking")} /></label>}
       </div>
       <div className="two">
         <PhotoBox label="Front photo" required value={f.photo_front} onChange={e => onPhoto("photo_front", e)} />
@@ -183,7 +197,7 @@ function SubmitForm({ onCancel, onDone }) {
       </div>
       <label className="field">Anything we should know?<textarea className="input" rows={2} maxLength={500} {...bind("note")} placeholder="Cert number, whitening, centering…" /></label>
       {error && <p className="buy-error">{error}</p>}
-      <button className="buy-btn" disabled={busy}><span>{busy ? "Sending…" : "Submit for an offer"}</span></button>
+      <button className="buy-btn" disabled={busy}><span>{busy ? "Sending…" : vault ? "Add to my vault" : "Submit for an offer"}</span></button>
       <button type="button" className="ghost-btn" onClick={onCancel}>Cancel</button>
 
       {picker && (

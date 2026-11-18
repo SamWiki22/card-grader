@@ -82,6 +82,26 @@ and logins, the same project BB Inventory already uses), **Vercel** (hosting), a
    last sale price from eBay, Goldin or Card Ladder (with the link), and tick "Use this sale as the card's value".
    A last sale on a TCGplayer-synced card is kept as its backup price, used whenever TCGplayer has none.
 
+### Player sign-in (passwords)
+- **New players:** tap **Create account** and enter an email, a password (8+ characters) and the 18+ box. We email them a
+  6-digit code **once** to prove the email is theirs. After that they log in with their email and password.
+- **Existing players:** they can set a password on their **Profile** page, or use **Forgot password?** (emails a code and sets a new password).
+- **Lockout:** 5 wrong passwords lock that email's password login for 15 minutes. The email code still works.
+- **Email link:** "Email me a sign-in link instead" still works for anyone who prefers it.
+- **Supabase setting:** in Supabase → Authentication → Sign In / Providers → **Email**, leave sign-in with password **on** (it's on by default).
+  Keep `{{ .Token }}` in the Magic Link email template so the code appears.
+
+### Players' own cards in their vault
+- **Adding a card:** on the **Sell** tab, a player taps **+ Add a card to my vault** and adds photos and details. The card shows in their vault right away,
+  **locked** ("Waiting for arrival"), with a code like `BB-7K3QX` to mail in with the card.
+- **When it arrives:** in `/admin/packs` → **Card submissions** it shows as "To their vault". Check it against the photos, set its value
+  and the pack pool it would go into, then click **Arrived — add to their vault**. It's now a normal vault card.
+  If it doesn't match, click **Card not as described**.
+- **Selling any vault card** (pulled or mailed in), at your buyback rates either way:
+  - **Sell into a pack pool:** the card goes back into its pack for someone else to pull.
+  - **Sell to Bearded Bear:** the card leaves the packs and becomes a store single: quantity 1, priced at its market value,
+    cost = what you paid. It shows in BB Inventory and on the site right away. Edit or hide it there if you'd rather not list it.
+
 ### Buying cards from players (Sell tab)
 Players submit a card from **Sell** with photos, grade and an optional TCGplayer match. In `/admin/packs` → **Card submissions**:
 1. Check the photos. Use the **eBay sold** / **Card Ladder** links to price it, enter **Our value**, and the **Offer**

@@ -31,7 +31,7 @@ export default async function handler(req, res) {
   if (!admin) return;
 
   if (req.method === "GET") {
-    const SUB_COLS = "id,user_id,game,name,set_name,card_number,grade,asking_cents,note,tcg_product_id,market_cents,value_cents,offer_cents,admin_note,status,card_id,created_at,updated_at";
+    const SUB_COLS = "id,user_id,kind,game,name,set_name,card_number,grade,asking_cents,note,tcg_product_id,market_cents,value_cents,offer_cents,admin_note,status,card_id,created_at,updated_at";
     const [tiers, cards, noPhoto, ships, rules, items, openSubs, closedSubs] = await Promise.all([
       listTiers({ includeInactive: true }),
       selectAll(() => db.from("pack_cards").select(`id,tier_id,name,set_name,grade,market_value_cents,weight,buyback_percent,status,owner_id,owner,cost_cents,created_at,updated_at,${TCG_COLS}`).order("created_at", { ascending: false }).order("id")),
@@ -41,7 +41,7 @@ export default async function handler(req, res) {
       getBuybackRules(),
       db.from("items").select(`id,name,set_name,game,condition,quantity,price,${TCG_COLS}`).eq("type", "single").order("name"),
       db.from("submissions").select(SUB_COLS).in("status", ["submitted", "offered", "accepted"]).order("created_at"),
-      db.from("submissions").select(SUB_COLS).in("status", ["paid", "declined", "rejected"]).order("updated_at", { ascending: false }).limit(20),
+      db.from("submissions").select(SUB_COLS).in("status", ["paid", "declined", "rejected", "vaulted"]).order("updated_at", { ascending: false }).limit(20),
     ]);
     const subs = [...(openSubs.data || []), ...(closedSubs.data || [])];
     const ids = [...new Set(subs.map(s => s.user_id))];
@@ -302,6 +302,13 @@ export default async function handler(req, res) {
     case "pay-submission":
       result = await db.rpc("pay_submission", { p_id: String(b.id), p_tier: String(b.tier || ""), p_value: cents(b.value), p_card_id: randomBytes(8).toString("hex") });
       if (result.error?.message?.includes("NOT_ACCEPTED")) return res.status(409).json({ error: "The player hasn’t accepted this offer (or it’s already paid)." });
+      break;
+
+    // A player's own card arrived: it goes into their vault (held for them). p_tier is the
+    // pool it joins if they later sell it into a pack.
+    case "vault-intake":
+      result = await db.rpc("vault_intake", { p_id: String(b.id), p_tier: String(b.tier || ""), p_value: cents(b.value), p_card_id: randomBytes(8).toString("hex") });
+      if (result.error?.message?.includes("NOT_ACCEPTED")) return res.status(409).json({ error: "That card isn’t waiting to be checked in (or it’s already in their vault)." });
       break;
 
     // Add (or remove) pack credit by hand: testing, refunds, giveaways, raffle prizes.

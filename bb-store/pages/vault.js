@@ -29,12 +29,12 @@ export default function Vault() {
   const vaultValue = held.reduce((s, c) => s + c.market_value_cents, 0);
   const toggle = id => setSelected(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id]);
 
-  async function sell(card) {
+  async function sell(card, to) {
     setBusy(true); setError("");
     try {
-      const r = await postJSON("/api/vault/sell", { card: card.id });
+      const r = await postJSON("/api/vault/sell", { card: card.id, to });
       me.setBalance(r.balance_cents);
-      setMsg(`Sold ${card.name} for ${centsToMoney(r.amount_cents)}.`);
+      setMsg(`Sold ${card.name} ${to === "store" ? "to Bearded Bear" : "into a pack pool"} for ${centsToMoney(r.amount_cents)}.`);
       setSelected(s => s.filter(x => x !== card.id));
       setModal(null);
       await load();
@@ -84,10 +84,23 @@ export default function Vault() {
       {msg && <p className="app-banner">{msg}</p>}
       {error && <p className="buy-error">{error}</p>}
 
+      {data?.incoming?.length > 0 && (
+        <section className="incoming">
+          <h2 className="caps">Waiting for arrival · {data.incoming.length}</h2>
+          <p className="dim small">Locked until the card reaches us and we check it. Mail it with the code on a note inside{data.shipTo?.length ? <> to <b>{data.shipTo.join(", ")}</b></> : ""}.</p>
+          <ul className="app-list">
+            {data.incoming.map(s => (
+              <li key={s.id}><span>🔒 {s.name}{s.grade ? ` · ${s.grade}` : ""}</span><span className="dim">Code <b className="code">{s.id}</b></span></li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       {!data ? <p className="dim">Loading…</p> : !held.length ? (
         <div className="app-empty small-empty">
           <p>No cards in your vault yet.</p>
           <Link href="/packs" className="buy-btn narrow"><span>Open a pack</span></Link>
+          <Link href="/sell" className="text-link">or add a card you own</Link>
         </div>
       ) : (
         <div className="vault-grid">
@@ -102,7 +115,7 @@ export default function Vault() {
                 <div className="in-pack-name">{c.name}</div>
                 <div className="vault-row">
                   <span className="in-pack-value">{centsToMoney(c.market_value_cents)}</span>
-                  <button className="mini-pill" onClick={() => setModal({ sell: c })}>Sell {c.buyback_percent}%</button>
+                  <button className="mini-pill" onClick={() => setModal({ sell: c })}>Sell</button>
                 </div>
               </div>
             );
@@ -121,11 +134,16 @@ export default function Vault() {
       )}
 
       {modal?.sell && (
-        <Modal title="Sell this card back?" onClose={() => setModal(null)}>
+        <Modal title="Sell this card?" onClose={() => setModal(null)}>
           <p><b>{modal.sell.name}</b>{modal.sell.grade ? ` (${modal.sell.grade})` : ""}</p>
           <p>Market value {centsToMoney(modal.sell.market_value_cents)} → you get <b>{centsToMoney(modal.sell.buyback_cents)}</b> ({modal.sell.buyback_percent}%) added to your balance right away.</p>
           <p className="muted small">Value based on: {modal.sell.price_source === "comp" && modal.sell.comp_url ? <a href={modal.sell.comp_url} target="_blank" rel="noreferrer">{valueBasis(modal.sell)}</a> : valueBasis(modal.sell)}</p>
-          <button className="btn btn-block" disabled={busy} onClick={() => sell(modal.sell)}>{busy ? "Selling…" : "Sell back"}</button>
+          <div className="stack">
+            <button className="btn btn-block" disabled={busy} onClick={() => sell(modal.sell, "pool")}>{busy ? "Selling…" : "Sell into a pack pool"}</button>
+            <span className="muted small">It goes into a pack for someone else to pull.</span>
+            <button className="btn btn-block btn-ghost-dark" disabled={busy} onClick={() => sell(modal.sell, "store")}>{busy ? "Selling…" : "Sell to Bearded Bear"}</button>
+            <span className="muted small">We buy it for the shop. Same price either way.</span>
+          </div>
         </Modal>
       )}
       {modal === "ship" && <ShipForm cards={held.filter(c => selected.includes(c.id))} fee={data.ship_fee_cents} onClose={() => setModal(null)}
