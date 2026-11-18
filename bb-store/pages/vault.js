@@ -84,23 +84,10 @@ export default function Vault() {
       {msg && <p className="app-banner">{msg}</p>}
       {error && <p className="buy-error">{error}</p>}
 
-      {data?.incoming?.length > 0 && (
-        <section className="incoming">
-          <h2 className="caps">Waiting for arrival · {data.incoming.length}</h2>
-          <p className="dim small">Locked until the card reaches us and we check it. Mail it with the code on a note inside{data.shipTo?.length ? <> to <b>{data.shipTo.join(", ")}</b></> : ""}.</p>
-          <ul className="app-list">
-            {data.incoming.map(s => (
-              <li key={s.id}><span>🔒 {s.name}{s.grade ? ` · ${s.grade}` : ""}</span><span className="dim">Code <b className="code">{s.id}</b></span></li>
-            ))}
-          </ul>
-        </section>
-      )}
-
       {!data ? <p className="dim">Loading…</p> : !held.length ? (
         <div className="app-empty small-empty">
           <p>No cards in your vault yet.</p>
           <Link href="/packs" className="buy-btn narrow"><span>Open a pack</span></Link>
-          <Link href="/sell" className="text-link">or add a card you own</Link>
         </div>
       ) : (
         <div className="vault-grid">

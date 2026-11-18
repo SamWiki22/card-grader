@@ -10,7 +10,7 @@ export const config = { api: { bodyParser: { sizeLimit: "6mb" } } };
 const OPEN = ["submitted", "offered", "accepted"];
 const MAX_OPEN = 15;
 const MAX_PHOTO = 2_500_000; // characters of data URL (~1.8 MB image)
-const PUBLIC_COLS = "id,kind,game,name,set_name,card_number,grade,asking_cents,note,tcg_product_id,market_cents,offer_cents,admin_note,status,created_at,updated_at";
+const PUBLIC_COLS = "id,game,name,set_name,card_number,grade,asking_cents,note,tcg_product_id,market_cents,offer_cents,admin_note,status,created_at,updated_at";
 
 // Unambiguous characters for codes people write on a package.
 function code() {
@@ -42,8 +42,6 @@ export default async function handler(req, res) {
   const { data: open } = await db.from("submissions").select("id").eq("user_id", user.id).in("status", OPEN);
   if ((open || []).length >= MAX_OPEN) return res.status(429).json({ error: `You have ${MAX_OPEN} cards waiting already — let us catch up first.` });
 
-  // "vault": the player keeps the card; they mail it in and it lands in their vault (no offer step).
-  const kind = b.kind === "vault" ? "vault" : "sale";
   const t = b.tcg?.productId ? b.tcg : null;
   let market = null;
   if (t) market = await marketCents(Number(t.categoryId), Number(t.groupId), Number(t.productId), String(t.subType || "")).catch(() => null);
@@ -58,9 +56,7 @@ export default async function handler(req, res) {
     set_name: String(b.set_name || "").trim().slice(0, 120),
     card_number: String(b.card_number || "").trim().slice(0, 40),
     grade: String(b.grade || "").trim().slice(0, 40),
-    kind,
-    status: kind === "vault" ? "accepted" : "submitted",
-    asking_cents: kind === "vault" ? null : asking,
+    asking_cents: asking,
     note: String(b.note || "").trim().slice(0, 500),
     photo_front: front,
     photo_back: photo(b.photo_back),

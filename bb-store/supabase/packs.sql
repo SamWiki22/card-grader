@@ -450,7 +450,7 @@ create table if not exists team_members (
 );
 alter table team_members enable row level security;
 
--- ── v8: password sign-in, players adding their own cards to the vault, selling to the store ──
+-- ── v8: password sign-in, selling vault cards to the store ──
 
 -- Shoppers can log in with email + password (the email is checked once, with a code, when the account is made).
 alter table profiles add column if not exists has_password boolean not null default false;
@@ -461,34 +461,6 @@ create table if not exists login_failures (
   locked_until timestamptz
 );
 alter table login_failures enable row level security;
-
--- submissions.kind: 'sale' = player wants an offer (as before); 'vault' = player is mailing
--- the card in to keep in their vault. A vault card goes straight to 'accepted' (mail it in),
--- then 'vaulted' once it arrives and we check it.
-alter table submissions add column if not exists kind text not null default 'sale';
-
--- Card arrived and matches the photos: it lands in the player's vault, held for them.
--- p_tier is the pack pool it joins if they later sell it into a pool.
-create or replace function vault_intake(p_id text, p_tier text, p_value bigint, p_card_id text)
-returns jsonb language plpgsql as $$
-declare
-  s submissions;
-begin
-  select * into s from submissions where id = p_id and kind = 'vault' and status = 'accepted' for update;
-  if not found then raise exception 'NOT_ACCEPTED'; end if;
-  if not exists (select 1 from pack_tiers where id = p_tier) then raise exception 'TIER_UNAVAILABLE'; end if;
-  if p_value < 0 then raise exception 'BAD_AMOUNT'; end if;
-
-  insert into pack_cards (id, tier_id, name, set_name, grade, market_value_cents, image,
-                          tcg_category_id, tcg_group_id, tcg_product_id, tcg_subtype,
-                          status, owner_id, held_at)
-  values (p_card_id, p_tier, s.name || case when s.card_number <> '' then ' ' || s.card_number else '' end,
-          s.set_name, s.grade, p_value, s.photo_front,
-          s.tcg_category_id, s.tcg_group_id, s.tcg_product_id, s.tcg_subtype,
-          'held', s.user_id, now());
-  update submissions set status = 'vaulted', value_cents = p_value, card_id = p_card_id, updated_at = now() where id = p_id;
-  return jsonb_build_object('card_id', p_card_id);
-end $$;
 
 -- Sell a vaulted card to the store instead of into a pack pool: same buyback rate,
 -- but the card leaves the pack system and becomes a store single (quantity 1,
@@ -523,7 +495,5 @@ begin
   return jsonb_build_object('amount_cents', amount, 'percent', pct, 'balance_cents', bal, 'item_id', item_id);
 end $$;
 
-revoke all on function vault_intake(text, text, bigint, text) from public, anon, authenticated;
 revoke all on function sell_to_store(uuid, text) from public, anon, authenticated;
-grant execute on function vault_intake(text, text, bigint, text) to service_role;
 grant execute on function sell_to_store(uuid, text) to service_role;

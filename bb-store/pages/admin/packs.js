@@ -640,7 +640,7 @@ function CompEditor({ row, onSave, onClose }) {
 // eBay search limited to sold listings.
 const ebaySold = (name, grade) => `https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent([name, grade && !/^raw/i.test(grade) ? grade : ""].filter(Boolean).join(" "))}&LH_Sold=1&LH_Complete=1`;
 
-const SUB_STATUS = { submitted: "New", offered: "Offer sent", accepted: "Accepted — awaiting card", paid: "Paid", declined: "Player declined", rejected: "Rejected", vaulted: "In their vault" };
+const SUB_STATUS = { submitted: "New", offered: "Offer sent", accepted: "Accepted — awaiting card", paid: "Paid", declined: "Player declined", rejected: "Rejected" };
 
 // Player-submitted cards: review → offer → (player accepts) → card arrives → pay + add to a pool.
 function Submissions({ subs, tiers, rules, act }) {
@@ -654,7 +654,7 @@ function Submissions({ subs, tiers, rules, act }) {
       {closed.length > 0 && (
         <details className="closed-subs">
           <summary>Recently closed ({closed.length})</summary>
-          <ul>{closed.map(s => <li key={s.id}><b>{s.id}</b> · {s.name} · {s.kind === "vault" ? "Vault · " : ""}{SUB_STATUS[s.status]}{s.status === "paid" ? ` · paid ${centsToMoney(s.offer_cents)}` : ""} · {s.email}</li>)}</ul>
+          <ul>{closed.map(s => <li key={s.id}><b>{s.id}</b> · {s.name} · {SUB_STATUS[s.status]}{s.status === "paid" ? ` · paid ${centsToMoney(s.offer_cents)}` : ""} · {s.email}</li>)}</ul>
         </details>
       )}
     </>
@@ -688,17 +688,10 @@ function SubmissionCard({ s, tiers, rules, act }) {
           {s.tcg_product_id ? <> · <a href={`https://www.tcgplayer.com/product/${s.tcg_product_id}`} target="_blank" rel="noreferrer">TCGplayer</a></> : null}
         </div>
         {s.note && <div className="small muted">Player: “{s.note}”</div>}
-        <div className="small"><span className="pill-status">{s.kind === "vault" ? "To their vault — awaiting card" : SUB_STATUS[s.status]}</span> · sent {new Date(s.created_at).toLocaleDateString()}</div>
+        <div className="small"><span className="pill-status">{SUB_STATUS[s.status]}</span> · sent {new Date(s.created_at).toLocaleDateString()}</div>
       </div>
       <div className="sub-do">
-        {s.kind === "vault" ? (
-          <>
-            <label className="small">Pool (if they sell it into a pack)<select className="input input-sm" value={tier} onChange={e => setTier(e.target.value)}>{tiers.map(t => <option key={t.id} value={t.id}>{t.name} ({centsToMoney(t.price_cents)})</option>)}</select></label>
-            <label className="small">Card value $<input className="input input-sm num" type="number" step="0.01" min="0" value={value} onChange={e => setValue(e.target.value)} /></label>
-            <button className="btn btn-small" onClick={() => act({ action: "vault-intake", id: s.id, tier, value }, `${s.name} is in ${s.email}’s vault.`)}>Arrived — add to their vault</button>
-            <button className="link-button" onClick={() => act({ action: "reject-submission", id: s.id, note: note || "Card didn’t match the photos." }, "Submission rejected.")}>Card not as described</button>
-          </>
-        ) : s.status === "accepted" ? (
+        {s.status === "accepted" ? (
           <>
             <label className="small">Pool<select className="input input-sm" value={tier} onChange={e => setTier(e.target.value)}>{tiers.map(t => <option key={t.id} value={t.id}>{t.name} ({centsToMoney(t.price_cents)})</option>)}</select></label>
             <label className="small">Pool value $<input className="input input-sm num" type="number" step="0.01" min="0" value={value} onChange={e => setValue(e.target.value)} /></label>
