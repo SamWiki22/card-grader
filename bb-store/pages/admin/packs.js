@@ -3,7 +3,10 @@ import Layout from "../../components/Layout";
 import SignIn from "../../components/SignIn";
 import TcgPicker from "../../components/TcgPicker";
 import Modal from "../../components/Modal";
+import PhotoPass from "../../components/PhotoPass";
+import PackPreview from "../../components/PackPreview";
 import { useMe, postJSON } from "../../lib/me";
+import { shrink, cardPhotoUrl } from "../../lib/photo";
 import { GAME_LABEL, GAME_SHORT, COMP_SOURCES, centsToMoney, money } from "../../lib/shared";
 import { balanceWeights, expectedValue, oddsFor, DEFAULT_TARGET_MARGIN } from "../../lib/odds";
 
@@ -75,7 +78,7 @@ export default function AdminPacks() {
       return true;
     } catch (e) { setMsg(`Error: ${e.message}`); return false; }
   }
-  const pick = (game, onPick) => setPicker({ game, onPick: t => { setPicker(null); onPick(t); } });
+  const pick = (game, onPick, opts = {}) => setPicker({ game, ...opts, onPick: t => { setPicker(null); onPick(t); } });
 
   if (!me.loading && !me.user) {
     return <Layout title="Admin"><section className="wrap section"><p>Sign in with an admin email.</p></section><SignIn onClose={() => {}} /></Layout>;
@@ -126,6 +129,10 @@ export default function AdminPacks() {
               </select>
             </div>
             <BalancePool tier={tier} cards={cards} act={act} />
+            <div className="pool-tools">
+              <PhotoPass tier={tier} cards={cards} onDone={m => { load(); setMsg(m); }} />
+              <PackPreview tier={tier} cards={cards} />
+            </div>
             <ImportPool tier={tier} act={act} />
             <AddCard tier={tier} pick={pick} onAdd={b => act({ action: "add-card", tier_id: tier.id, ...b }, "Card added to pool.")} />
             <div className="table-wrap">
@@ -133,7 +140,7 @@ export default function AdminPacks() {
                 <thead><tr><th>Card</th><th>Grade</th><th>Value</th><th>Buyback</th><th>Weight</th><th>Chance</th><th>TCGplayer</th><th>Last sold</th><th>Status</th><th /></tr></thead>
                 <tbody>
                   {cards.map(c => <CardRow key={c.id} c={c} tiers={data.tiers} rules={data.rules} total={cards.filter(x => x.status === "available").reduce((s, x) => s + Number(x.weight), 0)}
-                    onSave={b => act({ action: "update-card", id: c.id, ...b }, "Card updated.")}
+                    onSave={b => (b.photo ? act({ action: "set-card-photo", id: c.id, image: b.photo }, `Photo saved for ${c.name}.`) : act({ action: "update-card", id: c.id, ...b }, "Card updated."))}
                     onLink={() => pick(tier.game, t => act({ action: "link-tcg", target: "pack", id: c.id, tcg: t }, `Linked to TCGplayer${t.autoPrice ? " — price now follows market" : ""}.`))}
                     onUnlink={() => act({ action: "unlink-tcg", target: "pack", id: c.id }, "TCGplayer link removed; price is manual.")}
                     onComp={() => setComp({ target: "pack", row: c })} />)}
@@ -176,7 +183,7 @@ export default function AdminPacks() {
         ))}
       </section>
       {comp && <CompEditor {...comp} onClose={() => setComp(null)} onSave={async b => { if (await act({ action: "save-comp", target: comp.target, id: comp.row.id, ...b }, "Last sale saved.")) setComp(null); }} />}
-      {picker && <TcgPicker sources={data.tcgSources} initialGame={picker.game} onPick={picker.onPick} onClose={() => setPicker(null)} />}
+      {picker && <TcgPicker sources={data.tcgSources} initialGame={picker.game} initialQuery={picker.initialQuery || ""} initialSetFilter={picker.initialSetFilter || ""} onPick={picker.onPick} onClose={() => setPicker(null)} />}
     </Layout>
   );
 }
@@ -245,14 +252,73 @@ function TierRow({ t, active, onPick, onSave }) {
   );
 }
 
-function AddCard({ tier, games, pick, onAdd }) {
+// Add cards to a pool. On a phone: tap 📷 Snap card (or pick several photos from
+// the camera roll). Each photo is read with Claude to fill the form and becomes
+// the card's pull image; after Add, the next photo in the queue loads.
+function AddCard({ tier, pick, onAdd }) {
   const blank = { name: "", set_name: "", grade: "", value: "", weight: "1", buyback_percent: "", image: "", tcg: null };
   const [f, setF] = useState(blank);
   const [busy, setBusy] = useState(false);
+  const [queue, setQueue] = useState([]);   // [{ key, photo, forAi, read: null | "reading" | { items } | { error } }]
+  const [shown, setShown] = useState(null); // key of the queued photo the form shows
+  const [aiOff, setAiOff] = useState(false);
+  const [hint, setHint] = useState({ q: "", set: "" });
   const bind = k => ({ value: f[k], onChange: e => setF({ ...f, [k]: e.target.value }) });
+
+  // Read queued photos one at a time, in the background.
+  useEffect(() => {
+    const next = queue.find(q => q.read === null);
+    if (!next || queue.some(q => q.read === "reading")) return;
+    if (aiOff) { setQueue(qs => qs.map(q => (q.read === null ? { ...q, read: { items: [] } } : q))); return; }
+    setQueue(qs => qs.map(q => (q.key === next.key ? { ...q, read: "reading" } : q)));
+    postJSON("/api/admin/read-photo", { image: next.forAi, mode: "add" })
+      .then(r => ({ items: r.items || [] }))
+      .catch(e => { if (e.status === 501) setAiOff(true); return { error: e.status === 501 ? "" : e.message, items: [] }; })
+      .then(read => setQueue(qs => qs.map(q => (q.key === next.key ? { ...q, read, forAi: null } : q))));
+  }, [queue, aiOff]);
+
+  // Show the first queued photo in the form, and fill it in once it's been read.
+  const head = queue[0];
+  useEffect(() => {
+    if (!head || shown === `${head.key}:filled`) return;
+    const read = head.read && typeof head.read === "object" ? head.read : null;
+    const fresh = shown !== head.key; // new photo: start from a blank form
+    if (!read) { if (fresh) { setF({ ...blank, image: head.photo }); setShown(head.key); } return; }
+    const it = read.items[0];
+    // Anything typed while the photo was being read wins over what was read.
+    setF(cur => {
+      const base = fresh ? { ...blank, image: head.photo } : cur;
+      if (!it) return base;
+      return {
+        ...base,
+        name: base.name || (it.number && !it.name.includes(it.number) ? `${it.name} ${it.number}` : it.name),
+        set_name: base.set_name || it.set,
+        grade: base.grade || it.condition || "",
+        value: base.value || (it.price ? it.price.toFixed(2) : ""),
+      };
+    });
+    setHint(it ? { q: it.number || it.name, set: it.set } : { q: "", set: "" });
+    setShown(`${head.key}:filled`);
+  }, [head, shown]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function onPhotos(e) {
+    const files = [...(e.target.files || [])].slice(0, 40);
+    e.target.value = "";
+    if (!files.length) return;
+    const added = [];
+    for (const file of files) {
+      try {
+        const [photo, forAi] = await Promise.all([shrink(file, 900), shrink(file, 1400)]);
+        added.push({ key: `${Date.now()}-${Math.random()}`, photo, forAi, read: null });
+      } catch {}
+    }
+    setQueue(qs => [...qs, ...added]);
+  }
+  const nextPhoto = () => { setQueue(qs => qs.slice(1)); setShown(null); setF(blank); setHint({ q: "", set: "" }); };
 
   async function onPhoto(e) {
     const file = e.target.files?.[0];
+    e.target.value = "";
     if (file) setF({ ...f, image: await compress(file) });
   }
   function fromTcg(t) {
@@ -261,33 +327,57 @@ function AddCard({ tier, games, pick, onAdd }) {
       name: `${t.name}${t.number ? ` ${t.number}` : ""}`,
       set_name: t.setName,
       value: (t.cents / 100).toFixed(2),
-      image: cur.image || t.imageUrl,
+      image: cur.image || t.imageUrl, // a photo you took wins over the stock image
       tcg: t,
     }));
   }
   async function submit(e) {
     e.preventDefault();
     setBusy(true);
-    if (await onAdd(f)) setF(blank);
+    if (await onAdd(f)) {
+      if (head) nextPhoto(); else setF(blank);
+    }
     setBusy(false);
   }
 
+  const reading = head && !(head.read && typeof head.read === "object");
+  const readErr = head?.read?.error;
+  const many = head?.read?.items?.length > 1;
   return (
     <form className="add-card-box" onSubmit={submit}>
-      <div className="add-card-top">
-        <button type="button" className="btn btn-small" onClick={() => pick(tier.game, fromTcg)}>Find on TCGplayer</button>
-        {f.tcg
-          ? <span className="small">Linked to TCGplayer #{f.tcg.productId} · {f.tcg.subType} · {centsToMoney(f.tcg.cents)}{f.tcg.autoPrice ? " · price syncs daily" : ""} <button type="button" className="link-button" onClick={() => setF({ ...f, tcg: null })}>unlink</button></span>
-          : <span className="muted small">…or fill it in by hand (best for graded slabs TCGplayer doesn’t price).</span>}
+      <div className="snap-row">
+        <label className="btn snap-btn">📷 Snap card<input type="file" accept="image/*" capture="environment" onChange={onPhotos} hidden /></label>
+        <label className="btn btn-ghost-dark">🖼 Pick photos<input type="file" accept="image/*" multiple onChange={onPhotos} hidden /></label>
+        <button type="button" className="btn btn-ghost-dark" onClick={() => pick(tier.game, fromTcg, { initialQuery: hint.q, initialSetFilter: hint.set })}>🔎 TCGplayer</button>
       </div>
+      {head ? (
+        <div className="snap-status">
+          <img src={f.image || head.photo} alt="" />
+          <div className="small">
+            <b>Photo 1 of {queue.length}</b>
+            <div className="muted">
+              {reading ? "Reading the card…"
+                : readErr ? `Couldn’t read it (${readErr}). Type the details in.`
+                : aiOff ? "Photo reading isn’t set up (ANTHROPIC_API_KEY), so type the details in."
+                : head.read.items.length ? `Read as ${head.read.items[0].name}. Check it, then tap TCGplayer for the value${f.grade && /psa|bgs|cgc|sgc|tag/i.test(f.grade) ? " (or enter the slab’s last sale)" : ""}.`
+                : "No card found in this photo. Type the details in."}
+            </div>
+            {many && <div className="muted">There are {head.read.items.length} cards in this photo. Using the first one. One card per photo makes the best pull images.</div>}
+            <button type="button" className="link-button" onClick={nextPhoto}>Skip this photo</button>
+          </div>
+        </div>
+      ) : (
+        <p className="muted small snap-hint">Take a photo of each card (front, straight on, filling the frame). It fills in the details and becomes the image players see when they pull it. Or search TCGplayer, or type it in.</p>
+      )}
+      {f.tcg && <p className="small">Linked to TCGplayer #{f.tcg.productId} · {f.tcg.subType} · {centsToMoney(f.tcg.cents)}{f.tcg.autoPrice ? " · price syncs daily" : ""} <button type="button" className="link-button" onClick={() => setF({ ...f, tcg: null })}>unlink</button></p>}
       <div className="add-card">
         <input className="input" placeholder="Card name" required {...bind("name")} />
         <input className="input" placeholder="Set" {...bind("set_name")} />
         <input className="input" placeholder="Grade (PSA 9, Raw NM…)" {...bind("grade")} />
-        <input className="input num" type="number" step="0.01" min="0" placeholder="Value $" required {...bind("value")} />
-        <input className="input num" type="number" min="0" max="100" placeholder="Buyback % (auto)" title="Leave blank to use the buyback rates above" {...bind("buyback_percent")} />
-        <input className="input num" type="number" step="0.1" min="0.1" placeholder="Weight" title="Relative chance. 1 = normal; 0.5 = half as likely." {...bind("weight")} />
-        <label className="btn btn-small btn-ghost-dark file-btn">{f.image ? "Photo ✓" : "Photo"}<input type="file" accept="image/*" onChange={onPhoto} hidden /></label>
+        <input className="input num" type="number" inputMode="decimal" step="0.01" min="0" placeholder="Value $" required {...bind("value")} />
+        <input className="input num" type="number" inputMode="numeric" min="0" max="100" placeholder="Buyback % (auto)" title="Leave blank to use the buyback rates above" {...bind("buyback_percent")} />
+        <input className="input num" type="number" inputMode="decimal" step="any" min="0" placeholder="Weight" title="Relative chance. 1 = normal; 0.5 = half as likely." {...bind("weight")} />
+        <label className="btn btn-small btn-ghost-dark file-btn">{f.image ? "Photo ✓" : "Photo"}<input type="file" accept="image/*" capture="environment" onChange={onPhoto} hidden /></label>
         <button className="btn btn-small" disabled={busy}>{busy ? "Adding…" : `Add to ${tier.name}`}</button>
       </div>
     </form>
@@ -299,12 +389,31 @@ function CardRow({ c, tiers, rules, total, onSave, onLink, onUnlink, onComp }) {
   const [weight, setWeight] = useState(String(c.weight));
   const [bb, setBb] = useState(c.buyback_percent == null ? "" : String(c.buyback_percent));
   useEffect(() => setValue((c.market_value_cents / 100).toFixed(2)), [c.market_value_cents]);
+  // Keep in step with saved changes (e.g. after Balance to target margin).
+  useEffect(() => setWeight(String(c.weight)), [c.weight]);
+  useEffect(() => setBb(c.buyback_percent == null ? "" : String(c.buyback_percent)), [c.buyback_percent]);
+  const [uploading, setUploading] = useState(false);
+  async function onPhoto(e) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setUploading(true);
+    try { await onSave({ photo: await shrink(file, 900) }); } finally { setUploading(false); }
+  }
   const dirty = Math.round(value * 100) !== Number(c.market_value_cents) || Number(weight) !== Number(c.weight) || bb !== (c.buyback_percent == null ? "" : String(c.buyback_percent));
   const inPool = c.status === "available";
   const auto = ruleFor(c.market_value_cents, rules);
   return (
     <tr className={inPool ? "" : "row-dim"}>
-      <td>{c.name}<div className="muted small">{c.set_name}{c.owner ? ` · ${OWNER_NAMES[c.owner] || c.owner}` : ""}{c.cost_cents ? ` · cost ${centsToMoney(c.cost_cents)}` : ""}</div></td>
+      <td>
+        <div className="card-cell">
+          <label className={`card-thumb${c.has_photo ? "" : " missing"}`} title={c.has_photo ? "Replace photo" : "Add photo"}>
+            {uploading ? <span>…</span> : c.has_photo ? <img src={cardPhotoUrl(c)} alt="" loading="lazy" /> : <span>📷</span>}
+            <input type="file" accept="image/*" capture="environment" onChange={onPhoto} hidden />
+          </label>
+          <div>{c.name}<div className="muted small">{c.set_name}{c.owner ? ` · ${OWNER_NAMES[c.owner] || c.owner}` : ""}{c.cost_cents ? ` · cost ${centsToMoney(c.cost_cents)}` : ""}{c.has_photo ? "" : <span className="needs-photo"> · no photo</span>}</div></div>
+        </div>
+      </td>
       <td>{c.grade}</td>
       <td><input className="input input-sm num" type="number" step="0.01" value={value} onChange={e => setValue(e.target.value)} disabled={c.price_source !== "manual"} title={c.price_source === "tcgplayer" ? "Synced from TCGplayer — unlink to edit by hand" : c.price_source === "comp" ? "Set from the last sale — edit it under Last sold" : ""} /></td>
       <td><input className="input input-sm num" type="number" min="0" max="100" placeholder={`${auto} auto`} value={bb} onChange={e => setBb(e.target.value)} /></td>
