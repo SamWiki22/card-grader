@@ -65,6 +65,30 @@ positive (roughly 10–25%) by stocking mostly cards worth a bit under the pack 
 hits. Lower a chase card's weight to make it rarer. The margin moves every time a card is pulled
 or sold back, so check it often.
 
+**Balance to target margin** (button above each pool) does the weighting for you. Cards worth the pack price or less go
+to weight 1; pricier cards get weight (price ÷ value)^k, one k for the whole pool, so a $200 hit is cut far more than a
+$30 one. k is picked so the average pull ≈ (1 − margin) × pack price. The target defaults to 15%. You see the new weights,
+the odds of each value range and the resulting margin before anything is saved. It only makes hits rarer: if the pool
+is already above the target with every card at weight 1, that's as close as it gets.
+
+### How a card moves (and keeping counts right)
+`available` (in the pool) → pulled → `held` (in the player's vault) → sold back → `available` again in the same pool,
+or → `ship_requested` → `shipped`. Admins can also mark a pool card `retired` (removed) and restore it.
+Each move happens inside one database function (`open_pack`, `sell_back`, `request_shipment`), so a card can't be in two places
+and a player can't be charged without getting a card. Openings of the same pack queue up one at a time.
+A card in a vault can't be removed or moved to another pool from admin. Imports skip copies that are already in your
+pools or vaults (same name, set and grade) unless you untick **Skip them**. Run `supabase/check-pools.sql` any time to check the counts.
+
+### Card photos and top-pulls images (on your phone)
+The photo is what players see when they pull a card, so every pool card should have one.
+- **📷 Snap card** (in a pool's add box) opens the camera. Claude reads the card (needs `ANTHROPIC_API_KEY`) and fills
+  in the name, set and grade, and the photo becomes the pull image. Tap **🔎 TCGplayer** for the value (the search is
+  already filled in), then **Add**. **🖼 Pick photos** queues up to 40 camera-roll photos, and after each Add the next one loads.
+- **📷 Photo pass** goes through the pool's cards that have no photo, priciest first: find the card, take the photo, and the next card comes up.
+  Cards without a photo also show a dashed 📷 box in the pool table. Tap it (or any thumbnail) to add or replace that card's photo.
+- **🖼 Top pulls preview** makes a branded image of a pack's best cards (Post 4:5, Story 9:16 or Square). Tap cards to
+  choose up to 9, then **Share / Save image** to send it to Instagram or Messages, or save it to your photos.
+
 ### Before you take real money
 - **Legal:** paid random packs with cash-value prizes and buyback can count as gambling or a
   lottery in some states. Talk to a lawyer about age limits, state restrictions and whether you

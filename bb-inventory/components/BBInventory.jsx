@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { supabase } from "../lib/supabaseClient";
+import { changeQty } from "../lib/stock";
 
 // ── Data / constants ──────────────────────────────────────────────────────
 
@@ -1234,7 +1235,9 @@ export default function BBInventory() {
   }, [sales]);
 
   function openAdd(type = "box") { setDraft(emptyDraft(type)); setScanBanner(""); setIsNew(true); }
-  function openEdit(item) { setDraft({ ...item, game: item.game || inferGame(item), cost: item.cost ?? "", price: item.price ?? "" }); setScanBanner(""); setIsNew(false); }
+  // _startQty remembers the stock when the editor opened, so Save only applies the
+  // change you made (e.g. +3) instead of overwriting sales made meanwhile.
+  function openEdit(item) { setDraft({ ...item, _startQty: item.quantity, game: item.game || inferGame(item), cost: item.cost ?? "", price: item.price ?? "" }); setScanBanner(""); setIsNew(false); }
   function closeModal() { setDraft(null); setScanBanner(""); }
 
   async function handleScanFile(e) {
@@ -1299,10 +1302,25 @@ export default function BBInventory() {
       const { error } = await supabase.from("items").insert(itemToRow(withId));
       if (error) { alert("Couldn't save to the database: " + error.message); setItems(prev => prev.filter(i => i.id !== withId.id)); }
     } else {
-      setItems(prev => prev.map(i => (i.id === clean.id ? clean : i)));
+      const { _startQty, ...edited } = clean;
+      const delta = clampQty(edited.quantity) - clampQty(_startQty);
+      setItems(prev => prev.map(i => (i.id === edited.id ? { ...edited, quantity: clampQty(i.quantity + delta) } : i)));
       closeModal();
-      const { error } = await supabase.from("items").update(itemToRow(clean)).eq("id", clean.id);
-      if (error) alert("Couldn't save changes to the database: " + error.message);
+      // Everything except quantity is saved as typed; quantity only moves by what you changed.
+      const { quantity, ...rest } = itemToRow(edited);
+      dirtyQtyIds.current.add(edited.id);
+      try {
+        const { error } = await supabase.from("items").update(rest).eq("id", edited.id);
+        if (error) throw error;
+        if (delta) {
+          const q = await changeQty(supabase, edited.id, delta);
+          setItems(prev => prev.map(i => (i.id === edited.id ? { ...i, quantity: q } : i)));
+        }
+      } catch (error) {
+        alert("Couldn't save changes to the database: " + error.message);
+      } finally {
+        dirtyQtyIds.current.delete(edited.id);
+      }
     }
   }
 
@@ -1316,22 +1334,34 @@ export default function BBInventory() {
     if (error) alert("Couldn't delete from the database: " + error.message);
   }
 
+  const pendingQty = useRef({});
   const adjustQty = useCallback((id, delta) => {
-    // Update on-screen immediately, but only send ONE write to the database per burst of
-    // taps (after a short pause), using whatever quantity the user landed on. Sending a
-    // request per tap lets slow/out-of-order responses stomp on faster ones mid-burst.
+    // Update on-screen immediately, then send ONE change per burst of taps (after a
+    // short pause): "+2" or "-1", applied to whatever the database has now, so a
+    // website sale that landed meanwhile isn't overwritten.
+    const item = itemsRef.current.find(i => i.id === id);
+    if (!item) return;
+    const applied = clampQty(item.quantity + delta) - item.quantity;
+    if (!applied) return;
     dirtyQtyIds.current.add(id);
-    setItems(prev => prev.map(i => (i.id === id ? { ...i, quantity: clampQty(i.quantity + delta) } : i)));
+    pendingQty.current[id] = (pendingQty.current[id] || 0) + applied;
+    setItems(prev => prev.map(i => (i.id === id ? { ...i, quantity: clampQty(i.quantity + applied) } : i)));
 
     clearTimeout(qtyDebounce.current[id]);
     qtyDebounce.current[id] = setTimeout(async () => {
       delete qtyDebounce.current[id];
-      const item = itemsRef.current.find(i => i.id === id);
-      if (item) {
-        const { error } = await supabase.from("items").update({ quantity: item.quantity }).eq("id", id);
-        if (error) console.error("Failed to sync quantity:", error.message);
+      const change = pendingQty.current[id] || 0;
+      delete pendingQty.current[id];
+      try {
+        if (change) {
+          const q = await changeQty(supabase, id, change);
+          if (!pendingQty.current[id]) setItems(prev => prev.map(i => (i.id === id ? { ...i, quantity: q } : i)));
+        }
+      } catch (error) {
+        console.error("Failed to sync quantity:", error.message);
+        alert("Couldn't save that stock change — check your connection.");
       }
-      dirtyQtyIds.current.delete(id);
+      if (!pendingQty.current[id]) dirtyQtyIds.current.delete(id);
     }, 500);
   }, []);
 
@@ -1371,10 +1401,13 @@ export default function BBInventory() {
     };
     setSales(prev => [sale, ...prev].slice(0, MAX_SALES));
     setShowSell(false);
+    dirtyQtyIds.current.add(item.id);
     const [itemRes, saleRes] = await Promise.all([
-      supabase.from("items").update({ quantity: newQty }).eq("id", item.id),
+      changeQty(supabase, item.id, -qty).then(q => ({ q }), error => ({ error })),
       supabase.from("sales").insert(saleToRow(sale)),
     ]);
+    dirtyQtyIds.current.delete(item.id);
+    if (itemRes.q !== undefined) setItems(prev => prev.map(i => (i.id === item.id ? { ...i, quantity: itemRes.q } : i)));
     if (itemRes.error || saleRes.error) alert("Sale saved on screen but failed to sync to the database — check your connection and try again if it doesn't show up elsewhere.");
   }
 
@@ -1387,7 +1420,12 @@ export default function BBInventory() {
     const newQty = item ? clampQty(item.quantity + sale.quantity) : null;
     if (item) setItems(prev => prev.map(i => (i.id === sale.itemId ? { ...i, quantity: newQty } : i)));
     await supabase.from("sales").delete().eq("id", saleId);
-    if (item) await supabase.from("items").update({ quantity: newQty }).eq("id", sale.itemId);
+    if (item) {
+      try {
+        const q = await changeQty(supabase, sale.itemId, sale.quantity);
+        setItems(prev => prev.map(i => (i.id === sale.itemId ? { ...i, quantity: q } : i)));
+      } catch (error) { alert("Sale voided, but the stock couldn't be restored: " + error.message); }
+    }
   }
 
   function exportSalesCSV() {

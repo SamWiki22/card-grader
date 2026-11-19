@@ -1,5 +1,8 @@
 // Server-only: pack tiers, live pools and odds.
 import { db } from "./catalog";
+// Odds math lives in lib/odds.js so the admin page can run it in the browser too.
+import { oddsFor, expectedValue } from "./odds";
+export { oddsFor, expectedValue };
 
 // Buyback schedule from the buyback_rules table: [{ min_value_cents, percent }], lowest first.
 export async function getBuybackRules() {
@@ -21,33 +24,6 @@ export const buybackCents = (valueCents, pct) => Math.floor(valueCents * pct / 1
 export const SHIP_FEE_CENTS = Math.max(0, Number(process.env.VAULT_SHIP_FEE_CENTS) || 0);
 
 const CARD_COLUMNS = "id,tier_id,name,set_name,grade,market_value_cents,weight";
-
-// Value bands relative to the pack price, like "most pulls land near the price,
-// a few hit big". Labels use the real min/max of the cards in each band.
-const BAND_EDGES = [0, 0.6, 1.2, 3, 10, Infinity];
-
-export function oddsFor(cards, priceCents) {
-  const total = cards.reduce((s, c) => s + Number(c.weight), 0);
-  if (!total) return [];
-  const bands = BAND_EDGES.slice(0, -1).map((lo, i) => ({ lo: lo * priceCents, hi: BAND_EDGES[i + 1] * priceCents, cards: [] }));
-  for (const c of cards) bands.find(b => c.market_value_cents >= b.lo && c.market_value_cents < b.hi).cards.push(c);
-  return bands.map((b, band) => ({ ...b, band })).filter(b => b.cards.length).map(b => {
-    const values = b.cards.map(c => c.market_value_cents);
-    return {
-      band: b.band,                    // 0 = cheapest range … 4 = chase range
-      minCents: Math.min(...values),
-      maxCents: Math.max(...values),
-      count: b.cards.length,
-      chance: b.cards.reduce((s, c) => s + Number(c.weight), 0) / total,
-    };
-  });
-}
-
-// Expected value per opening, for the admin margin check.
-export function expectedValue(cards) {
-  const total = cards.reduce((s, c) => s + Number(c.weight), 0);
-  return total ? cards.reduce((s, c) => s + Number(c.weight) * c.market_value_cents, 0) / total : 0;
-}
 
 export async function listTiers({ includeInactive = false } = {}) {
   let q = db.from("pack_tiers").select("*").order("game").order("sort");

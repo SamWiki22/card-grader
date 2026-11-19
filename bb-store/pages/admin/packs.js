@@ -1,10 +1,15 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Layout from "../../components/Layout";
 import SignIn from "../../components/SignIn";
+import { AdminGate } from "../../components/TeamLogin";
 import TcgPicker from "../../components/TcgPicker";
 import Modal from "../../components/Modal";
+import PhotoPass from "../../components/PhotoPass";
+import PackPreview from "../../components/PackPreview";
 import { useMe, postJSON } from "../../lib/me";
+import { shrink, cardPhotoUrl } from "../../lib/photo";
 import { GAME_LABEL, GAME_SHORT, COMP_SOURCES, centsToMoney, money } from "../../lib/shared";
+import { balanceWeights, expectedValue, oddsFor, DEFAULT_TARGET_MARGIN } from "../../lib/odds";
 
 const pct = n => `${(n * 100).toFixed(1)}%`;
 const STATUS = { available: "In pool", held: "In a vault", ship_requested: "To ship", shipped: "Shipped", retired: "Pulled from pool" };
@@ -63,7 +68,7 @@ export default function AdminPacks() {
     setData(d);
     setTierId(t => t || d.tiers.find(x => x.game === "pokemon")?.id || d.tiers[0]?.id || "");
   }, []);
-  useEffect(() => { if (me.user) load(); }, [me.user, load]);
+  useEffect(() => { if (me.user || me.team) load(); }, [me.user, me.team, load]);
 
   async function act(body, okMsg) {
     setMsg("");
@@ -74,11 +79,9 @@ export default function AdminPacks() {
       return true;
     } catch (e) { setMsg(`Error: ${e.message}`); return false; }
   }
-  const pick = (game, onPick) => setPicker({ game, onPick: t => { setPicker(null); onPick(t); } });
+  const pick = (game, onPick, opts = {}) => setPicker({ game, ...opts, onPick: t => { setPicker(null); onPick(t); } });
 
-  if (!me.loading && !me.user) {
-    return <Layout title="Admin"><section className="wrap section"><p>Sign in with an admin email.</p></section><SignIn onClose={() => {}} /></Layout>;
-  }
+  if (!me.loading && !me.user && !me.team) return <Layout title="Admin"><AdminGate /></Layout>;
   if (denied) return <Layout title="Admin"><section className="wrap section"><p className="error">{denied}</p></section></Layout>;
   if (!data) return <Layout title="Admin"><section className="wrap section"><p className="muted">Loading…</p></section></Layout>;
 
@@ -124,14 +127,20 @@ export default function AdminPacks() {
                 {data.tiers.map(t => <option key={t.id} value={t.id}>{GAME_LABEL[t.game]} · {t.name} ({t.poolSize} cards)</option>)}
               </select>
             </div>
-            <ImportPool tier={tier} act={act} />
+            <BalancePool tier={tier} cards={cards} act={act} />
+            <div className="pool-tools">
+              <PhotoPass tier={tier} cards={cards} onDone={m => { load(); setMsg(m); }} />
+              <PackPreview tier={tier} cards={cards} />
+            </div>
+            <ImportPool tier={tier} act={act} allCards={data.cards} />
             <AddCard tier={tier} pick={pick} onAdd={b => act({ action: "add-card", tier_id: tier.id, ...b }, "Card added to pool.")} />
+            <PoolCounts cards={cards} />
             <div className="table-wrap">
               <table className="table">
                 <thead><tr><th>Card</th><th>Grade</th><th>Value</th><th>Buyback</th><th>Weight</th><th>Chance</th><th>TCGplayer</th><th>Last sold</th><th>Status</th><th /></tr></thead>
                 <tbody>
                   {cards.map(c => <CardRow key={c.id} c={c} tiers={data.tiers} rules={data.rules} total={cards.filter(x => x.status === "available").reduce((s, x) => s + Number(x.weight), 0)}
-                    onSave={b => act({ action: "update-card", id: c.id, ...b }, "Card updated.")}
+                    onSave={b => (b.photo ? act({ action: "set-card-photo", id: c.id, image: b.photo }, `Photo saved for ${c.name}.`) : act({ action: "update-card", id: c.id, ...b }, "Card updated."))}
                     onLink={() => pick(tier.game, t => act({ action: "link-tcg", target: "pack", id: c.id, tcg: t }, `Linked to TCGplayer${t.autoPrice ? " — price now follows market" : ""}.`))}
                     onUnlink={() => act({ action: "unlink-tcg", target: "pack", id: c.id }, "TCGplayer link removed; price is manual.")}
                     onComp={() => setComp({ target: "pack", row: c })} />)}
@@ -174,7 +183,7 @@ export default function AdminPacks() {
         ))}
       </section>
       {comp && <CompEditor {...comp} onClose={() => setComp(null)} onSave={async b => { if (await act({ action: "save-comp", target: comp.target, id: comp.row.id, ...b }, "Last sale saved.")) setComp(null); }} />}
-      {picker && <TcgPicker sources={data.tcgSources} initialGame={picker.game} onPick={picker.onPick} onClose={() => setPicker(null)} />}
+      {picker && <TcgPicker sources={data.tcgSources} initialGame={picker.game} initialQuery={picker.initialQuery || ""} initialSetFilter={picker.initialSetFilter || ""} onPick={picker.onPick} onClose={() => setPicker(null)} />}
     </Layout>
   );
 }
@@ -243,14 +252,73 @@ function TierRow({ t, active, onPick, onSave }) {
   );
 }
 
-function AddCard({ tier, games, pick, onAdd }) {
+// Add cards to a pool. On a phone: tap 📷 Snap card (or pick several photos from
+// the camera roll). Each photo is read with Claude to fill the form and becomes
+// the card's pull image; after Add, the next photo in the queue loads.
+function AddCard({ tier, pick, onAdd }) {
   const blank = { name: "", set_name: "", grade: "", value: "", weight: "1", buyback_percent: "", image: "", tcg: null };
   const [f, setF] = useState(blank);
   const [busy, setBusy] = useState(false);
+  const [queue, setQueue] = useState([]);   // [{ key, photo, forAi, read: null | "reading" | { items } | { error } }]
+  const [shown, setShown] = useState(null); // key of the queued photo the form shows
+  const [aiOff, setAiOff] = useState(false);
+  const [hint, setHint] = useState({ q: "", set: "" });
   const bind = k => ({ value: f[k], onChange: e => setF({ ...f, [k]: e.target.value }) });
+
+  // Read queued photos one at a time, in the background.
+  useEffect(() => {
+    const next = queue.find(q => q.read === null);
+    if (!next || queue.some(q => q.read === "reading")) return;
+    if (aiOff) { setQueue(qs => qs.map(q => (q.read === null ? { ...q, read: { items: [] } } : q))); return; }
+    setQueue(qs => qs.map(q => (q.key === next.key ? { ...q, read: "reading" } : q)));
+    postJSON("/api/admin/read-photo", { image: next.forAi, mode: "add" })
+      .then(r => ({ items: r.items || [] }))
+      .catch(e => { if (e.status === 501) setAiOff(true); return { error: e.status === 501 ? "" : e.message, items: [] }; })
+      .then(read => setQueue(qs => qs.map(q => (q.key === next.key ? { ...q, read, forAi: null } : q))));
+  }, [queue, aiOff]);
+
+  // Show the first queued photo in the form, and fill it in once it's been read.
+  const head = queue[0];
+  useEffect(() => {
+    if (!head || shown === `${head.key}:filled`) return;
+    const read = head.read && typeof head.read === "object" ? head.read : null;
+    const fresh = shown !== head.key; // new photo: start from a blank form
+    if (!read) { if (fresh) { setF({ ...blank, image: head.photo }); setShown(head.key); } return; }
+    const it = read.items[0];
+    // Anything typed while the photo was being read wins over what was read.
+    setF(cur => {
+      const base = fresh ? { ...blank, image: head.photo } : cur;
+      if (!it) return base;
+      return {
+        ...base,
+        name: base.name || (it.number && !it.name.includes(it.number) ? `${it.name} ${it.number}` : it.name),
+        set_name: base.set_name || it.set,
+        grade: base.grade || it.condition || "",
+        value: base.value || (it.price ? it.price.toFixed(2) : ""),
+      };
+    });
+    setHint(it ? { q: it.number || it.name, set: it.set } : { q: "", set: "" });
+    setShown(`${head.key}:filled`);
+  }, [head, shown]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function onPhotos(e) {
+    const files = [...(e.target.files || [])].slice(0, 40);
+    e.target.value = "";
+    if (!files.length) return;
+    const added = [];
+    for (const file of files) {
+      try {
+        const [photo, forAi] = await Promise.all([shrink(file, 900), shrink(file, 1400)]);
+        added.push({ key: `${Date.now()}-${Math.random()}`, photo, forAi, read: null });
+      } catch {}
+    }
+    setQueue(qs => [...qs, ...added]);
+  }
+  const nextPhoto = () => { setQueue(qs => qs.slice(1)); setShown(null); setF(blank); setHint({ q: "", set: "" }); };
 
   async function onPhoto(e) {
     const file = e.target.files?.[0];
+    e.target.value = "";
     if (file) setF({ ...f, image: await compress(file) });
   }
   function fromTcg(t) {
@@ -259,33 +327,57 @@ function AddCard({ tier, games, pick, onAdd }) {
       name: `${t.name}${t.number ? ` ${t.number}` : ""}`,
       set_name: t.setName,
       value: (t.cents / 100).toFixed(2),
-      image: cur.image || t.imageUrl,
+      image: cur.image || t.imageUrl, // a photo you took wins over the stock image
       tcg: t,
     }));
   }
   async function submit(e) {
     e.preventDefault();
     setBusy(true);
-    if (await onAdd(f)) setF(blank);
+    if (await onAdd(f)) {
+      if (head) nextPhoto(); else setF(blank);
+    }
     setBusy(false);
   }
 
+  const reading = head && !(head.read && typeof head.read === "object");
+  const readErr = head?.read?.error;
+  const many = head?.read?.items?.length > 1;
   return (
     <form className="add-card-box" onSubmit={submit}>
-      <div className="add-card-top">
-        <button type="button" className="btn btn-small" onClick={() => pick(tier.game, fromTcg)}>Find on TCGplayer</button>
-        {f.tcg
-          ? <span className="small">Linked to TCGplayer #{f.tcg.productId} · {f.tcg.subType} · {centsToMoney(f.tcg.cents)}{f.tcg.autoPrice ? " · price syncs daily" : ""} <button type="button" className="link-button" onClick={() => setF({ ...f, tcg: null })}>unlink</button></span>
-          : <span className="muted small">…or fill it in by hand (best for graded slabs TCGplayer doesn’t price).</span>}
+      <div className="snap-row">
+        <label className="btn snap-btn">📷 Snap card<input type="file" accept="image/*" capture="environment" onChange={onPhotos} hidden /></label>
+        <label className="btn btn-ghost-dark">🖼 Pick photos<input type="file" accept="image/*" multiple onChange={onPhotos} hidden /></label>
+        <button type="button" className="btn btn-ghost-dark" onClick={() => pick(tier.game, fromTcg, { initialQuery: hint.q, initialSetFilter: hint.set })}>🔎 TCGplayer</button>
       </div>
+      {head ? (
+        <div className="snap-status">
+          <img src={f.image || head.photo} alt="" />
+          <div className="small">
+            <b>Photo 1 of {queue.length}</b>
+            <div className="muted">
+              {reading ? "Reading the card…"
+                : readErr ? `Couldn’t read it (${readErr}). Type the details in.`
+                : aiOff ? "Photo reading isn’t set up (ANTHROPIC_API_KEY), so type the details in."
+                : head.read.items.length ? `Read as ${head.read.items[0].name}. Check it, then tap TCGplayer for the value${f.grade && /psa|bgs|cgc|sgc|tag/i.test(f.grade) ? " (or enter the slab’s last sale)" : ""}.`
+                : "No card found in this photo. Type the details in."}
+            </div>
+            {many && <div className="muted">There are {head.read.items.length} cards in this photo. Using the first one. One card per photo makes the best pull images.</div>}
+            <button type="button" className="link-button" onClick={nextPhoto}>Skip this photo</button>
+          </div>
+        </div>
+      ) : (
+        <p className="muted small snap-hint">Take a photo of each card (front, straight on, filling the frame). It fills in the details and becomes the image players see when they pull it. Or search TCGplayer, or type it in.</p>
+      )}
+      {f.tcg && <p className="small">Linked to TCGplayer #{f.tcg.productId} · {f.tcg.subType} · {centsToMoney(f.tcg.cents)}{f.tcg.autoPrice ? " · price syncs daily" : ""} <button type="button" className="link-button" onClick={() => setF({ ...f, tcg: null })}>unlink</button></p>}
       <div className="add-card">
         <input className="input" placeholder="Card name" required {...bind("name")} />
         <input className="input" placeholder="Set" {...bind("set_name")} />
         <input className="input" placeholder="Grade (PSA 9, Raw NM…)" {...bind("grade")} />
-        <input className="input num" type="number" step="0.01" min="0" placeholder="Value $" required {...bind("value")} />
-        <input className="input num" type="number" min="0" max="100" placeholder="Buyback % (auto)" title="Leave blank to use the buyback rates above" {...bind("buyback_percent")} />
-        <input className="input num" type="number" step="0.1" min="0.1" placeholder="Weight" title="Relative chance. 1 = normal; 0.5 = half as likely." {...bind("weight")} />
-        <label className="btn btn-small btn-ghost-dark file-btn">{f.image ? "Photo ✓" : "Photo"}<input type="file" accept="image/*" onChange={onPhoto} hidden /></label>
+        <input className="input num" type="number" inputMode="decimal" step="0.01" min="0" placeholder="Value $" required {...bind("value")} />
+        <input className="input num" type="number" inputMode="numeric" min="0" max="100" placeholder="Buyback % (auto)" title="Leave blank to use the buyback rates above" {...bind("buyback_percent")} />
+        <input className="input num" type="number" inputMode="decimal" step="any" min="0" placeholder="Weight" title="Relative chance. 1 = normal; 0.5 = half as likely." {...bind("weight")} />
+        <label className="btn btn-small btn-ghost-dark file-btn">{f.image ? "Photo ✓" : "Photo"}<input type="file" accept="image/*" capture="environment" onChange={onPhoto} hidden /></label>
         <button className="btn btn-small" disabled={busy}>{busy ? "Adding…" : `Add to ${tier.name}`}</button>
       </div>
     </form>
@@ -297,16 +389,35 @@ function CardRow({ c, tiers, rules, total, onSave, onLink, onUnlink, onComp }) {
   const [weight, setWeight] = useState(String(c.weight));
   const [bb, setBb] = useState(c.buyback_percent == null ? "" : String(c.buyback_percent));
   useEffect(() => setValue((c.market_value_cents / 100).toFixed(2)), [c.market_value_cents]);
+  // Keep in step with saved changes (e.g. after Balance to target margin).
+  useEffect(() => setWeight(String(c.weight)), [c.weight]);
+  useEffect(() => setBb(c.buyback_percent == null ? "" : String(c.buyback_percent)), [c.buyback_percent]);
+  const [uploading, setUploading] = useState(false);
+  async function onPhoto(e) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setUploading(true);
+    try { await onSave({ photo: await shrink(file, 900) }); } finally { setUploading(false); }
+  }
   const dirty = Math.round(value * 100) !== Number(c.market_value_cents) || Number(weight) !== Number(c.weight) || bb !== (c.buyback_percent == null ? "" : String(c.buyback_percent));
   const inPool = c.status === "available";
   const auto = ruleFor(c.market_value_cents, rules);
   return (
     <tr className={inPool ? "" : "row-dim"}>
-      <td>{c.name}<div className="muted small">{c.set_name}{c.owner ? ` · ${OWNER_NAMES[c.owner] || c.owner}` : ""}{c.cost_cents ? ` · cost ${centsToMoney(c.cost_cents)}` : ""}</div></td>
+      <td>
+        <div className="card-cell">
+          <label className={`card-thumb${c.has_photo ? "" : " missing"}`} title={c.has_photo ? "Replace photo" : "Add photo"}>
+            {uploading ? <span>…</span> : c.has_photo ? <img src={cardPhotoUrl(c)} alt="" loading="lazy" /> : <span>📷</span>}
+            <input type="file" accept="image/*" capture="environment" onChange={onPhoto} hidden />
+          </label>
+          <div>{c.name}<div className="muted small">{c.set_name}{c.owner ? ` · ${OWNER_NAMES[c.owner] || c.owner}` : ""}{c.cost_cents ? ` · cost ${centsToMoney(c.cost_cents)}` : ""}{c.has_photo ? "" : <span className="needs-photo"> · no photo</span>}</div></div>
+        </div>
+      </td>
       <td>{c.grade}</td>
       <td><input className="input input-sm num" type="number" step="0.01" value={value} onChange={e => setValue(e.target.value)} disabled={c.price_source !== "manual"} title={c.price_source === "tcgplayer" ? "Synced from TCGplayer — unlink to edit by hand" : c.price_source === "comp" ? "Set from the last sale — edit it under Last sold" : ""} /></td>
       <td><input className="input input-sm num" type="number" min="0" max="100" placeholder={`${auto} auto`} value={bb} onChange={e => setBb(e.target.value)} /></td>
-      <td><input className="input input-sm num" type="number" step="0.1" min="0.1" value={weight} onChange={e => setWeight(e.target.value)} /></td>
+      <td><input className="input input-sm num" type="number" step="any" min="0" inputMode="decimal" value={weight} onChange={e => setWeight(e.target.value)} /></td>
       <td>{inPool && total ? pct(Number(c.weight) / total) : "—"}</td>
       <td className="nowrap"><TcgStatus row={c} /><br /><button className="link-button" onClick={onLink}>{c.tcg_product_id ? "Relink" : "Link"}</button>{c.tcg_product_id && <> · <button className="link-button" onClick={onUnlink}>Unlink</button></>}</td>
       <td><CompCell row={c} onEdit={onComp} /></td>
@@ -315,15 +426,152 @@ function CardRow({ c, tiers, rules, total, onSave, onLink, onUnlink, onComp }) {
         {dirty && <button className="btn btn-small" onClick={() => onSave({ ...(c.price_source !== "manual" ? {} : { value }), weight, buyback_percent: bb })}>Save</button>}{" "}
         {c.status === "available" && <button className="link-button" onClick={() => onSave({ status: "retired" })}>Remove</button>}
         {c.status === "retired" && <button className="link-button" onClick={() => onSave({ status: "available" })}>Restore</button>}
-        {/* Move this card to another pool of the same game (live tiers first). */}
-        <select className="input input-sm move-select" value="" aria-label="Move to pool" onChange={e => e.target.value && onSave({ tier_id: e.target.value })}>
+        {/* Move this card to another pool of the same game (live tiers first). Cards in a player's vault stay put. */}
+        {(c.status === "available" || c.status === "retired") && <select className="input input-sm move-select" value="" aria-label="Move to pool" onChange={e => e.target.value && onSave({ tier_id: e.target.value })}>
           <option value="">Move to…</option>
           {tiers.filter(t => t.game === tiers.find(x => x.id === c.tier_id)?.game && t.id !== c.tier_id)
             .sort((a, b) => Number(b.active) - Number(a.active) || a.price_cents - b.price_cents)
             .map(t => <option key={t.id} value={t.id}>{t.name} · {centsToMoney(t.price_cents)}{t.active ? "" : " (hidden)"}</option>)}
-        </select>
+        </select>}
       </td>
     </tr>
+  );
+}
+
+// "12.5%" for everyday chances, "1 in 4,300" once they get small.
+const chance = p => (!p ? "—" : p >= 0.01 ? pct(p) : `1 in ${Math.round(1 / p).toLocaleString("en-US")}`);
+const fmtWeight = w => String(Number(w));
+
+// Balance to target margin: cards worth ≤ the pack price go to weight 1, pricier
+// cards are scaled down (the pricier, the more) until the average pull is about
+// (1 − margin) × price. The preview runs the same code the server runs on save.
+function BalancePool({ tier, cards, act }) {
+  const [open, setOpen] = useState(false);
+  const [target, setTarget] = useState(String(DEFAULT_TARGET_MARGIN * 100));
+  const [busy, setBusy] = useState(false);
+  const price = Number(tier.price_cents);
+  const pool = useMemo(() => cards.filter(c => c.status === "available"), [cards]);
+  const margin = Number(target) / 100;
+  const validTarget = target.trim() !== "" && margin >= 0 && margin <= 0.9;
+
+  const preview = useMemo(() => {
+    if (!open || !validTarget) return null;
+    const plan = balanceWeights(pool, price, margin);
+    const after = pool.map(c => ({ ...c, weight: plan.weights[c.id] ?? c.weight }));
+    const total = after.reduce((s, c) => s + Number(c.weight), 0);
+    const oddsNow = oddsFor(pool, price), oddsAfter = oddsFor(after, price);
+    // One line per identical card (same name, grade, value and weights).
+    const groups = new Map();
+    let changed = 0, lowCount = 0, lowReset = 0, lowValue = 0;
+    for (const c of pool) {
+      const w = plan.weights[c.id];
+      if (Number(c.weight) !== w) changed++;
+      if (c.market_value_cents <= price) {
+        lowCount++; lowValue += c.market_value_cents;
+        if (Number(c.weight) !== w) lowReset++;
+        continue;
+      }
+      const key = [c.name, c.grade, c.market_value_cents, c.weight, w].join("|");
+      const g = groups.get(key) || { name: c.name, grade: c.grade, value: c.market_value_cents, from: Number(c.weight), to: w, count: 0 };
+      g.count++;
+      groups.set(key, g);
+    }
+    const hits = [...groups.values()].sort((a, b) => b.value - a.value || a.name.localeCompare(b.name));
+    return { plan, total, oddsNow, oddsAfter, hits, changed, lowCount, lowReset, lowAvg: lowCount ? lowValue / lowCount : 0 };
+  }, [open, validTarget, pool, price, margin]);
+
+  const evNow = expectedValue(pool);
+  const marginNow = pool.length && price ? 1 - evNow / price : null;
+
+  async function save() {
+    setBusy(true);
+    const ok = await act({ action: "balance-pool", tier: tier.id, margin },
+      r => `${tier.name} balanced: ${r.changed} weight${r.changed === 1 ? "" : "s"} changed · avg pull ${centsToMoney(r.evCents)} · margin ${pct(r.margin)}.`);
+    setBusy(false);
+    if (ok) setOpen(false);
+  }
+
+  const p = preview?.plan;
+  return (
+    <>
+      <div className="balance-bar">
+        <button className="btn btn-small" onClick={() => setOpen(true)} disabled={!pool.length}>⚖ Balance to target margin</button>
+        <span className="muted small">Now: avg pull {pool.length ? centsToMoney(Math.round(evNow)) : "—"} · margin {marginNow === null ? "—" : pct(marginNow)}</span>
+      </div>
+      {open && (
+        <Modal wide title={`Balance ${GAME_SHORT[tier.game]} · ${tier.name}`} onClose={() => setOpen(false)}>
+          <div className="bal">
+            <label className="bal-target">
+              <span>Target margin</span>
+              <span className="money-input"><input className="input input-sm num" type="number" inputMode="decimal" min="0" max="90" step="0.5" value={target} onChange={e => setTarget(e.target.value)} />%</span>
+              <span className="muted small">of {centsToMoney(price)} → avg pull ≈ {validTarget ? centsToMoney(Math.round((1 - margin) * price)) : "—"}</span>
+            </label>
+            {!validTarget && <p className="error small">Enter a margin between 0% and 90%.</p>}
+
+            {preview && (
+              <>
+                <div className="bal-stats">
+                  <div><span className="muted small">Now</span><b>{centsToMoney(Math.round(evNow))}</b><span className={marginNow < 0.1 ? "neg" : "pos"}>{pct(marginNow)} margin</span></div>
+                  <div className="bal-arrow" aria-hidden="true">→</div>
+                  <div><span className="muted small">After</span><b>{centsToMoney(Math.round(p.evCents))}</b><span className={p.margin < 0.1 ? "neg" : "pos"}>{pct(p.margin)} margin</span></div>
+                </div>
+
+                {p.status === "already-under" && <p className="banner light small">Even with every card at weight 1 the margin is {pct(p.margin)}, above your target. This only ever makes hits rarer, so the closest it gets is every card at weight 1.</p>}
+                {p.status === "no-hits" && <p className="banner light small">No card is worth more than {centsToMoney(price)}, so there’s nothing to scale. Every card goes to weight 1.</p>}
+                {p.status === "unreachable" && <p className="error small">Can’t reach {pct(margin)}: the {preview.lowCount} cards at or under {centsToMoney(price)} average {centsToMoney(Math.round(preview.lowAvg))} on their own ({pct(1 - preview.lowAvg / price)} margin), even with hits made nearly impossible. Add cheaper cards or lower the target.</p>}
+
+                <h3 className="bal-h">Odds by value</h3>
+                <table className="bal-odds">
+                  <thead><tr><th>Card value</th><th>Now</th><th>After</th></tr></thead>
+                  <tbody>
+                    {preview.oddsAfter.map(b => (
+                      <tr key={b.band}>
+                        <td>{b.minCents === b.maxCents ? centsToMoney(b.minCents) : `${centsToMoney(b.minCents)}–${centsToMoney(b.maxCents)}`}<span className="muted small"> · {b.count}</span></td>
+                        <td>{chance(preview.oddsNow.find(x => x.band === b.band)?.chance)}</td>
+                        <td><b>{chance(b.chance)}</b></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                <h3 className="bal-h">New weights</h3>
+                {preview.hits.length > 0 && (
+                  <ul className="bal-list">
+                    {preview.hits.map((g, i) => (
+                      <li key={i} className={g.from === g.to ? "same" : ""}>
+                        <div className="bal-card"><span>{g.name}{g.grade ? <span className="muted"> · {g.grade}</span> : null}{g.count > 1 ? <span className="muted"> ×{g.count}</span> : null}</span><b>{centsToMoney(g.value)}</b></div>
+                        <div className="muted small">weight {fmtWeight(g.from)} → <b className="ink">{fmtWeight(g.to)}</b> · {chance(g.to / preview.total)} per pull{g.count > 1 ? " each" : ""}</div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <p className="muted small">{preview.lowCount} card{preview.lowCount === 1 ? "" : "s"} worth {centsToMoney(price)} or less {preview.lowCount === 1 ? "sits" : "sit"} at weight 1{preview.lowReset ? ` (${preview.lowReset} reset from another weight)` : ""}.</p>
+
+                <div className="bal-actions">
+                  <button className="btn" onClick={save} disabled={busy || p.status === "unreachable" || !preview.changed}>
+                    {busy ? "Saving…" : preview.changed ? `Save ${preview.changed} weight${preview.changed === 1 ? "" : "s"}` : "No changes"}
+                  </button>
+                  <button className="link-button" onClick={() => setOpen(false)}>Cancel</button>
+                </div>
+                <p className="muted small">Weights are recalculated from the pool at the moment you save, so a card pulled in between is handled.</p>
+              </>
+            )}
+          </div>
+        </Modal>
+      )}
+    </>
+  );
+}
+
+// Where every card that was ever stocked in this pool is now.
+function PoolCounts({ cards }) {
+  const n = st => cards.filter(c => c.status === st).length;
+  const parts = [["In pool", n("available")], ["In vaults", n("held")], ["Waiting to ship", n("ship_requested")], ["Shipped", n("shipped")], ["Removed", n("retired")]];
+  return (
+    <p className="pool-counts small">
+      {parts.filter(([, v], i) => v || i === 0).map(([label, v]) => <span key={label}><b>{v}</b> {label}</span>)}
+      <span className="muted">· {cards.length} total</span>
+    </p>
   );
 }
 
@@ -521,9 +769,32 @@ const OWNER_NAMES = { sam: "Sam", bear_umer: "Bear / Umer", shared: "Shared 50/5
 const COLS = { owner: ["owner"], cost: ["cost"], name: ["name", "card", "card name", "title"], set: ["set", "set name", "expansion"], grade: ["grade", "condition"], value: ["value", "price", "market", "market value"], qty: ["qty", "quantity", "count"], image: ["image", "photo", "image url", "img"], weight: ["weight"] };
 
 // Import CSV: spreadsheet → pool. Columns (any order): name, set, grade, value, qty, image, weight.
-function ImportPool({ tier, act }) {
+// Same card = same name, set and grade (values drift with price syncs).
+const cardKey = (name, set, grade) => [name, set, grade].map(v => String(v || "").trim().toLowerCase().replace(/\s+/g, " ")).join("|");
+
+function ImportPool({ tier, act, allCards }) {
   const [rows, setRows] = useState(null);
   const [err, setErr] = useState("");
+  const [skipDupes, setSkipDupes] = useState(true);
+  // Re-importing the same file (e.g. an IllestCollect export) must not double the
+  // pool. Match each row against cards already in any pool, in a vault or shipped,
+  // copy for copy, and leave those copies out unless told otherwise.
+  const plan = useMemo(() => {
+    if (!rows) return null;
+    const have = new Map();
+    for (const c of allCards) { const k = cardKey(c.name, c.set_name, c.grade); have.set(k, (have.get(k) || 0) + 1); }
+    let dupes = 0;
+    const fresh = [];
+    for (const r of rows) {
+      const k = cardKey(r.name, r.set, r.grade);
+      const qty = Math.max(1, Math.round(Number(r.qty) || 1));
+      const already = Math.min(qty, have.get(k) || 0);
+      have.set(k, (have.get(k) || 0) - already);
+      dupes += already;
+      if (qty - already > 0) fresh.push({ ...r, qty: qty - already });
+    }
+    return { dupes, fresh };
+  }, [rows, allCards]);
   async function onFile(e) {
     const file = e.target.files?.[0]; e.target.value = ""; setErr(""); setRows(null);
     if (!file) return;
@@ -552,13 +823,25 @@ function ImportPool({ tier, act }) {
     <div className="import-pool">
       <label className="btn btn-small btn-ghost-dark">⬆ Import CSV / IllestCollect JSON into {tier.name}<input type="file" accept=".csv,text/csv,.json,application/json" onChange={onFile} hidden /></label>
       <a className="small" href={template} download="pool-template.csv">Download template</a>
-      {rows && (
-        <span className="small">
-          {rows.length} card{rows.length === 1 ? "" : "s"} ({rows.reduce((s, r) => s + (Number(r.qty) || 1), 0)} copies, {money(rows.reduce((s, r) => s + Number(r.value || 0) * (Number(r.qty) || 1), 0))} total value) ready ·{" "}
-          <button className="btn btn-small" onClick={async () => { if (await act({ action: "import-pool", tier: tier.id, rows }, r => `Imported ${r.added} cards into ${tier.name}.`)) setRows(null); }}>Import</button>{" "}
-          <button className="link-button" onClick={() => setRows(null)}>Cancel</button>
-        </span>
-      )}
+      {rows && plan && (() => {
+        const send = skipDupes ? plan.fresh : rows;
+        const copies = send.reduce((s, r) => s + (Number(r.qty) || 1), 0);
+        return (
+          <span className="small import-ready">
+            {plan.dupes > 0 && (
+              <span className="import-dupes">
+                ⚠ {plan.dupes} cop{plan.dupes === 1 ? "y is" : "ies are"} already in your pools or vaults (same name, set and grade).{" "}
+                <label className="check-inline"><input type="checkbox" checked={skipDupes} onChange={e => setSkipDupes(e.target.checked)} /> Skip {plan.dupes === 1 ? "it" : "them"}</label>
+              </span>
+            )}
+            <span>
+              {copies} cop{copies === 1 ? "y" : "ies"} ({money(send.reduce((s, r) => s + Number(r.value || 0) * (Number(r.qty) || 1), 0))} total value) ready ·{" "}
+              <button className="btn btn-small" disabled={!copies} onClick={async () => { if (await act({ action: "import-pool", tier: tier.id, rows: send }, r => `Imported ${r.added} cards into ${tier.name}${skipDupes && plan.dupes ? ` (skipped ${plan.dupes} already in your pools)` : ""}.`)) setRows(null); }}>Import</button>{" "}
+              <button className="link-button" onClick={() => setRows(null)}>Cancel</button>
+            </span>
+          </span>
+        );
+      })()}
       {err && <span className="error small">{err}</span>}
     </div>
   );

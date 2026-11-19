@@ -68,6 +68,10 @@ and logins, the same project BB Inventory already uses), **Vercel** (hosting), a
 3. Click **Pool** next to a tier, then add cards: name, set, grade, market value, and a photo.
 4. Watch **House margin** in the tiers table and keep it positive (aim for 10–25%). Mostly stock
    cards worth a bit less than the pack price, plus a few hits.
+   Or tap **⚖ Balance to target margin** above the pool: set a margin (15% by default), check the preview, then **Save**.
+   Re-run it after restocking, since prices and the pool keep changing.
+   On your phone, **📷 Snap card** adds cards from photos, and **📷 Photo pass** photographs cards that are already in the pool.
+   The photo is what players see when they pull the card. **🖼 Top pulls preview** makes a shareable image of each pack's best cards.
 5. Untick **Live** on tiers you aren't ready to sell, then click **Save**.
 6. **Buyback rates** (same page): set what players get back by card value. The defaults are 75% under $20,
    85% from $20, 90% from $100 and 95% from $500. Type a % in a card's **Buyback** box to override it for that card.
@@ -78,6 +82,21 @@ and logins, the same project BB Inventory already uses), **Vercel** (hosting), a
    last sale price from eBay, Goldin or Card Ladder (with the link), and tick "Use this sale as the card's value".
    A last sale on a TCGplayer-synced card is kept as its backup price, used whenever TCGplayer has none.
 
+### Player sign-in (passwords)
+- **New players:** tap **Create account** and enter an email, a password (8+ characters) and the 18+ box. We email them a
+  6-digit code **once** to prove the email is theirs. After that they log in with their email and password.
+- **Existing players:** they can set a password on their **Profile** page, or use **Forgot password?** (emails a code and sets a new password).
+- **Lockout:** 5 wrong passwords lock that email's password login for 15 minutes. The email code still works.
+- **Email link:** "Email me a sign-in link instead" still works for anyone who prefers it.
+- **Supabase setting:** in Supabase → Authentication → Sign In / Providers → **Email**, leave sign-in with password **on** (it's on by default).
+  Keep `{{ .Token }}` in the Magic Link email template so the code appears.
+
+### Selling vault cards
+Any card in a player's vault has a **Sell** button with two choices, both at your buyback rates:
+- **Sell into a pack pool:** the card goes back into its pack for someone else to pull.
+- **Sell to Bearded Bear:** the card leaves the packs and becomes a store single: quantity 1, priced at its market value,
+  cost = what you paid. It shows in BB Inventory and on the site right away. Edit or hide it there if you'd rather not list it.
+
 ### Buying cards from players (Sell tab)
 Players submit a card from **Sell** with photos, grade and an optional TCGplayer match. In `/admin/packs` → **Card submissions**:
 1. Check the photos. Use the **eBay sold** / **Card Ladder** links to price it, enter **Our value**, and the **Offer**
@@ -86,6 +105,18 @@ Players submit a card from **Sell** with photos, grade and an optional TCGplayer
 3. Accepted cards show your `SHOP_ADDRESS` and a code like `BB-7K3QX` to put in the package.
 4. When it arrives and matches the photos, pick the pool and click **Card arrived — pay**. The player is credited
    and the card joins the pool with their photo. If it doesn't match, click **Card not as described**.
+
+### Team access (who can get into admin)
+- **Owners** (master control): illestcollect@gmail.com and beardedbeartcg@gmail.com are built in, so they can never be
+  locked out. Sign in with your email code. Owners can do everything, and only owners can open **/admin/team**.
+- **Team accounts:** in **/admin/team**, add someone with a username, a password (tap **Suggest** for one) and an access level:
+  - **Staff:** store inventory, recording sales and offers.
+  - **Admin:** everything except managing the team.
+- **Signing in:** team members tap the **logo at the top left 5 times** (or open any /admin page) and enter their username and password.
+- **Managing accounts:** from /admin/team you can reset a password, change access, **Sign out everywhere**, **Disable** or remove someone.
+  Changes apply right away, even on a phone that's already signed in. 5 wrong passwords lock that account for 15 minutes.
+- **Before first use:** re-run `supabase/packs.sql` once, since it adds the team table.
+- The older `ADMIN_EMAILS` / `STAFF_EMAILS` settings in Vercel still work. You can leave them, or move people to team accounts.
 
 ### Adding inventory (staff)
 Inventory lives at `/admin/store` (the **Admin** / **Inventory** link in the header).
@@ -104,9 +135,24 @@ or create one at console.anthropic.com → API Keys). Each photo costs roughly 1
 - **Sales** page (`/admin/sales`, admins only): today's total, day-by-day revenue and profit, Sam's and Bear/Umer's
   shares (Shared items split 50/50), every sale with its photo, **Undo** (puts the stock back), and CSV export.
 
-### Retiring the old BB Inventory app
-Once you don't need it, delete its project in Vercel, then run `supabase/lock-down.sql` in the Supabase SQL Editor.
-That closes the old app's open access to your inventory tables; the website keeps working.
+### Using BB Inventory at the booth alongside the website
+BB Inventory and the website share the same inventory and sales tables in Supabase, so:
+- **Sold at the booth** (BB Inventory → Sell): stock goes down and the item comes off the website once it hits 0.
+- **Sold on the website:** stock goes down in BB Inventory within seconds, and the sale shows in its sales history as
+  "Website (buyer name)". Pull that item from the booth.
+- **Restocked** (BB Inventory + / − or Edit): the website shows the new stock right away.
+
+Every stock change from either app adds or subtracts. It only saves if nobody else changed the number in between, and retries
+if they did, so a booth sale and a website sale at the same moment are both counted.
+(Before the Nov 2026 update, BB Inventory saved "set stock to the number on my screen", which could erase a website sale.
+**Redeploy BB Inventory too:** in Vercel, open the BB Inventory project → Deployments → ⋯ → Redeploy, after merging.)
+
+**Don't run `supabase/lock-down.sql` while you use BB Inventory.** It switches off BB Inventory's access to the inventory.
+
+**Keep the BB Inventory link private.** BB Inventory has no login: anyone with its link can change stock and prices, and
+those changes show on the website. Don't post the link, and remove people's access by changing the Supabase anon key if it leaks.
+The website's **/admin/store** (Inventory, 📷 Record sales, Sales) does the same jobs behind a sign-in. Staff get access through
+`STAFF_EMAILS`, so it's the safer option for helpers.
 
 ## Step 6 — Your own domain (optional)
 1. In Vercel, open the project, go to **Settings → Domains**, and add e.g. `beardedbeartcg.com`.
@@ -135,6 +181,15 @@ Start in **test mode** so no real money moves.
 - [ ] Every live tier has a positive house margin.
 - [ ] You've opened a pack, sold a card back, and requested shipping yourself with test money.
 - [ ] Upgrade to Vercel Pro and Supabase Pro.
+
+## After updating the site: re-run packs.sql
+Some updates change the database functions as well as the site. Whenever one does (like the Nov 2026 fix that stops
+two pack openings from colliding), open Supabase → **SQL Editor**, paste all of `bb-store/supabase/packs.sql`, and click **Run**.
+It's safe to run again. It doesn't touch your cards, balances or tiers.
+
+**Checking the counts:** paste `bb-store/supabase/check-pools.sql` into the SQL Editor and run it. It's read-only. The first table shows
+how many cards each pack has in the pool, in vaults, shipping and removed. Every other result should be empty. If one isn't,
+it lists the cards or players whose records don't add up.
 
 ## When something goes wrong
 - **Store is empty:** check `SUPABASE_URL` / `SUPABASE_ANON_KEY`, and that items have quantity and price above 0.

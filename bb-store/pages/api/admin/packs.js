@@ -2,6 +2,7 @@ import { randomBytes } from "crypto";
 import { requireAdmin } from "../../../lib/auth";
 import { db, selectAll } from "../../../lib/catalog";
 import { listTiers, oddsFor, expectedValue, getBuybackRules } from "../../../lib/packs";
+import { balanceWeights } from "../../../lib/odds";
 import { TCG_SOURCES, marketCents } from "../../../lib/tcg";
 import { COMP_SOURCES } from "../../../lib/shared";
 import { refreshPrices } from "../../../lib/prices";
@@ -31,9 +32,11 @@ export default async function handler(req, res) {
 
   if (req.method === "GET") {
     const SUB_COLS = "id,user_id,game,name,set_name,card_number,grade,asking_cents,note,tcg_product_id,market_cents,value_cents,offer_cents,admin_note,status,card_id,created_at,updated_at";
-    const [tiers, cards, ships, rules, items, openSubs, closedSubs] = await Promise.all([
+    const [tiers, cards, noPhoto, ships, rules, items, openSubs, closedSubs] = await Promise.all([
       listTiers({ includeInactive: true }),
-      selectAll(() => db.from("pack_cards").select(`id,tier_id,name,set_name,grade,market_value_cents,weight,buyback_percent,status,owner_id,owner,cost_cents,created_at,${TCG_COLS}`).order("created_at", { ascending: false }).order("id")),
+      selectAll(() => db.from("pack_cards").select(`id,tier_id,name,set_name,grade,market_value_cents,weight,buyback_percent,status,owner_id,owner,cost_cents,created_at,updated_at,${TCG_COLS}`).order("created_at", { ascending: false }).order("id")),
+      // Which cards have no photo yet (ids only, so the base64 images never ship here).
+      selectAll(() => db.from("pack_cards").select("id").is("image", null).order("id")),
       db.from("shipments").select("*").order("created_at", { ascending: false }).limit(100),
       getBuybackRules(),
       db.from("items").select(`id,name,set_name,game,condition,quantity,price,${TCG_COLS}`).eq("type", "single").order("name"),
@@ -45,7 +48,8 @@ export default async function handler(req, res) {
     const { data: people } = ids.length ? await db.from("profiles").select("user_id,email").in("user_id", ids) : { data: [] };
     const emailOf = Object.fromEntries((people || []).map(p => [p.user_id, p.email]));
     const submissions = subs.map(({ user_id, ...s }) => ({ ...s, email: emailOf[user_id] || "" }));
-    const all = cards.data || [];
+    const missing = new Set((noPhoto.data || []).map(r => r.id));
+    const all = (cards.data || []).map(c => ({ ...c, has_photo: !missing.has(c.id) }));
     const stats = tiers.map(t => {
       const pool = all.filter(c => c.tier_id === t.id && c.status === "available");
       const ev = expectedValue(pool);
@@ -158,12 +162,62 @@ export default async function handler(req, res) {
       if (b.value !== undefined) patch.market_value_cents = cents(b.value);
       if (b.weight !== undefined && Number(b.weight) > 0) patch.weight = Number(b.weight);
       if (b.tier_id) patch.tier_id = String(b.tier_id);
+      if (patch.tier_id && b.status) return res.status(400).json({ error: "Move or change status, not both at once." });
       if (b.buyback_percent !== undefined) patch.buyback_percent = intOrNull(b.buyback_percent);
       // Only cards sitting in a pool can be pulled out of it; vaulted cards belong to someone.
       if (b.status === "retired" || b.status === "available") patch.status = b.status;
       let q = db.from("pack_cards").update(patch).eq("id", String(b.id));
-      if (patch.status) q = q.in("status", ["available", "retired"]);
-      result = await q;
+      // A card in a player's vault (or shipping) can't be pulled from a pool or moved
+      // to another one; only cards sitting in a pool, or removed from one, can.
+      const guarded = patch.status || patch.tier_id;
+      if (guarded) q = q.in("status", ["available", "retired"]);
+      result = await q.select("id");
+      if (!result.error && guarded && !result.data?.length) return res.status(409).json({ error: "That card is in a player’s vault now, so it can’t be moved or removed." });
+      break;
+    }
+
+    // Rebalance a pool's weights toward a target house margin (see lib/odds.js).
+    // The weights are recomputed here from the pool as it is now, with the same
+    // code as the admin preview, so a card pulled in between can't skew them.
+    case "balance-pool": {
+      const margin = Number(b.margin);
+      if (!(margin >= 0 && margin <= 0.9)) return res.status(400).json({ error: "Target margin must be between 0% and 90%." });
+      const { data: tierRow } = await db.from("pack_tiers").select("id,price_cents").eq("id", String(b.tier || "")).maybeSingle();
+      if (!tierRow) return res.status(400).json({ error: "Pick a pool." });
+      const { data: pool, error: poolErr } = await selectAll(() => db.from("pack_cards").select("id,market_value_cents,weight").eq("tier_id", tierRow.id).eq("status", "available").order("id"));
+      if (poolErr) { console.error(poolErr); return res.status(500).json({ error: poolErr.message }); }
+      const plan = balanceWeights(pool, Number(tierRow.price_cents), margin);
+      if (plan.status === "empty") return res.status(400).json({ error: "This pool has no cards." });
+      if (plan.status === "unreachable") return res.status(409).json({ error: "Can’t reach that margin: the cards at or under the pack price are worth too much on their own." });
+      // One update per distinct new weight.
+      const byWeight = new Map();
+      for (const c of pool) {
+        const w = plan.weights[c.id];
+        if (Number(c.weight) === w) continue;
+        if (!byWeight.has(w)) byWeight.set(w, []);
+        byWeight.get(w).push(c.id);
+      }
+      const now = new Date().toISOString();
+      let changed = 0;
+      for (const [weight, ids] of byWeight) {
+        for (let i = 0; i < ids.length; i += 200) {
+          const chunk = ids.slice(i, i + 200);
+          const { error } = await db.from("pack_cards").update({ weight, updated_at: now })
+            .in("id", chunk).eq("tier_id", tierRow.id).eq("status", "available");
+          if (error) { console.error(error); return res.status(500).json({ error: `Saved ${changed} weights, then failed: ${error.message}` }); }
+          changed += chunk.length;
+        }
+      }
+      return res.json({ ok: true, changed, margin: plan.margin, evCents: Math.round(plan.evCents), status: plan.status });
+    }
+
+    // Add, replace or remove a pool card's photo (the image players see when they pull it).
+    case "set-card-photo": {
+      const image = b.image == null || b.image === "" ? null : String(b.image);
+      if (image && !(/^data:image\/(jpeg|png|webp);base64,/.test(image) && image.length < 3_500_000) && !/^https:\/\//.test(image)) {
+        return res.status(400).json({ error: "That photo couldn’t be used — try again." });
+      }
+      result = await db.from("pack_cards").update({ image, updated_at: new Date().toISOString() }).eq("id", String(b.id));
       break;
     }
 

@@ -5,13 +5,13 @@ import { createContext, useCallback, useContext, useEffect, useState } from "rea
 const MeContext = createContext(null);
 
 export function MeProvider({ children }) {
-  const [me, setMe] = useState({ loading: true, user: null, ready: false, balance_cents: 0 });
+  const [me, setMe] = useState({ loading: true, user: null, team: null, ready: false, balance_cents: 0 });
 
   const refresh = useCallback(async () => {
     try {
       const r = await fetch("/api/auth/me");
       const data = await r.json();
-      setMe({ loading: false, ready: !!data.ready, user: data.user, balance_cents: data.balance_cents || 0, pending_offers: data.pending_offers || 0, new_customer_offers: data.new_customer_offers || 0 });
+      setMe({ loading: false, ready: !!data.ready, user: data.user, team: data.team || null, balance_cents: data.balance_cents || 0, pending_offers: data.pending_offers || 0, new_customer_offers: data.new_customer_offers || 0 });
     } catch {
       setMe(m => ({ ...m, loading: false }));
     }
@@ -37,3 +37,12 @@ export async function postJSON(url, body) {
   if (!r.ok) throw Object.assign(new Error(data.error || "Something went wrong."), { status: r.status });
   return data;
 }
+
+// What the signed-in person can open, whether they signed in with an email
+// code (me.user) or a team username/password (me.team).
+export const accessOf = me => ({
+  signedIn: !!(me.user || me.team),
+  staff: !!(me.user?.staff || me.team?.staff),
+  admin: !!(me.user?.admin || me.team?.admin),
+  owner: !!me.user?.owner,
+});

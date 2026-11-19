@@ -109,15 +109,20 @@ declare
   pull_id bigint;
 begin
   if p_roll < 0 or p_roll >= 1 then raise exception 'BAD_ROLL'; end if;
-  select * into t from pack_tiers where id = p_tier and active;
+  -- One opening per pack at a time: everyone opening this pack queues on the
+  -- tier row. (Locking the pool's cards one by one let two openings lock them
+  -- in different orders and deadlock.) NO KEY UPDATE still lets cards be added
+  -- to the pool meanwhile.
+  select * into t from pack_tiers where id = p_tier and active for no key update;
   if not found then raise exception 'TIER_UNAVAILABLE'; end if;
 
   select balance_cents into bal from profiles where user_id = p_user for update;
   if bal is null then raise exception 'NO_PROFILE'; end if;
   if bal < t.price_cents then raise exception 'INSUFFICIENT_FUNDS'; end if;
 
-  -- Lock the whole pool so two openings can't draw the same card.
-  perform 1 from pack_cards where tier_id = p_tier and status = 'available' for update;
+  -- Lock the pool's cards (in a fixed order) so an admin edit, removal or move
+  -- can't change a card between the draw and the update below.
+  perform 1 from pack_cards where tier_id = p_tier and status = 'available' order by id for update;
   select coalesce(sum(weight), 0) into total from pack_cards where tier_id = p_tier and status = 'available';
   if total <= 0 then raise exception 'POOL_EMPTY'; end if;
 
@@ -129,7 +134,9 @@ begin
   end loop;
 
   update pack_cards set status = 'held', owner_id = p_user, held_at = now(), updated_at = now()
-    where id = picked_id returning * into picked;
+    where id = picked_id and tier_id = p_tier and status = 'available' returning * into picked;
+  -- Never hand out a card that left the pool; the whole opening rolls back (no charge).
+  if picked.id is null then raise exception 'POOL_CHANGED'; end if;
   update profiles set balance_cents = balance_cents - t.price_cents where user_id = p_user;
   insert into ledger (user_id, kind, amount_cents, note, ref)
     values (p_user, 'pack_open', -t.price_cents, t.name || ' pack', picked.id);
@@ -420,3 +427,73 @@ alter table offers enable row level security;
 -- ── v6: owner + cost on pack pool cards (partner split, imports) ─────────
 alter table pack_cards add column if not exists owner text not null default '';
 alter table pack_cards add column if not exists cost_cents bigint not null default 0;
+
+-- ── v7: team accounts (username + password) ──────────────────────────────
+-- Owners (set in lib/auth.js) add and remove these in /admin/team.
+-- role: staff = store inventory, sales and offers; admin = everything except
+-- managing the team. Passwords are stored as scrypt hashes. Bumping
+-- session_version signs that person out everywhere.
+create table if not exists team_members (
+  id text primary key,
+  username text not null unique,
+  display_name text not null default '',
+  role text not null check (role in ('staff', 'admin')),
+  password_hash text not null,
+  session_version integer not null default 1,
+  disabled boolean not null default false,
+  failed_logins integer not null default 0,
+  locked_until timestamptz,
+  last_login_at timestamptz,
+  created_by text not null default '',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+alter table team_members enable row level security;
+
+-- ── v8: password sign-in, selling vault cards to the store ──
+
+-- Shoppers can log in with email + password (the email is checked once, with a code, when the account is made).
+alter table profiles add column if not exists has_password boolean not null default false;
+-- Wrong-password counter per email: 5 misses lock that email's password login for 15 minutes.
+create table if not exists login_failures (
+  email text primary key,
+  fails integer not null default 0,
+  locked_until timestamptz
+);
+alter table login_failures enable row level security;
+
+-- Sell a vaulted card to the store instead of into a pack pool: same buyback rate,
+-- but the card leaves the pack system and becomes a store single (quantity 1,
+-- priced at its market value, cost = what we paid).
+create or replace function sell_to_store(p_user uuid, p_card text)
+returns jsonb language plpgsql as $$
+declare
+  card pack_cards;
+  t pack_tiers;
+  pct integer;
+  amount bigint;
+  bal bigint;
+  item_id text;
+begin
+  select * into card from pack_cards where id = p_card and owner_id = p_user and status = 'held' for update;
+  if not found then raise exception 'NOT_YOURS'; end if;
+  select * into t from pack_tiers where id = card.tier_id;
+  pct := buyback_percent_for(card.market_value_cents, card.buyback_percent);
+  amount := floor(card.market_value_cents * pct / 100.0);
+  item_id := 'vault-' || card.id;
+
+  update pack_cards set status = 'sold_to_store', owner_id = null, held_at = null, updated_at = now() where id = p_card;
+  insert into items (id, type, game, owner, name, set_name, condition, quantity, cost, price, notes, photo,
+                     tcg_category_id, tcg_group_id, tcg_product_id, tcg_subtype, price_source)
+  values (item_id, 'single', coalesce(t.game, 'other'), '', card.name, card.set_name, card.grade, 1,
+          round(amount / 100.0, 2), round(card.market_value_cents / 100.0, 2), 'Bought from a player''s vault', card.image,
+          card.tcg_category_id, card.tcg_group_id, card.tcg_product_id, card.tcg_subtype,
+          case when card.price_source = 'tcgplayer' then 'tcgplayer' else 'manual' end);
+  update profiles set balance_cents = balance_cents + amount where user_id = p_user returning balance_cents into bal;
+  insert into ledger (user_id, kind, amount_cents, note, ref)
+    values (p_user, 'buyback', amount, 'Sold to Bearded Bear store (' || pct || '%): ' || card.name, card.id);
+  return jsonb_build_object('amount_cents', amount, 'percent', pct, 'balance_cents', bal, 'item_id', item_id);
+end $$;
+
+revoke all on function sell_to_store(uuid, text) from public, anon, authenticated;
+grant execute on function sell_to_store(uuid, text) to service_role;
