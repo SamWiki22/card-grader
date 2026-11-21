@@ -2,6 +2,7 @@ import { stripe } from "../../lib/stripe";
 import { getProductsByIds } from "../../lib/catalog";
 import { GAME_LABEL } from "../../lib/shared";
 import { getOffer, offerPrice } from "../../lib/offers";
+import { shippingConfig, shippingPlan } from "../../lib/shipping";
 
 // Builds a Stripe Checkout session from the cart. Prices and stock come from
 // the inventory database — never from the browser.
@@ -32,12 +33,14 @@ export default async function handler(req, res) {
   const problems = [];
   const lineItems = [];
   let subtotalCents = 0;
+  const planLines = [];
   for (const [id, qty] of requested) {
     const p = byId[id];
     if (!p || p.price <= 0 || p.stock <= 0) { problems.push("An item in your cart just sold out."); continue; }
     if (qty > p.stock) { problems.push(`Only ${p.stock} of “${p.name}” left.`); continue; }
     const unit = offer ? Number(offerPrice(offer)) : Math.round(p.price * 100);
     subtotalCents += unit * qty;
+    planLines.push({ type: p.type, priceCents: unit, qty });
     lineItems.push({
       quantity: qty,
       price_data: {
@@ -53,15 +56,17 @@ export default async function handler(req, res) {
   }
   if (problems.length) return res.status(409).json({ error: `${problems.join(" ")} Refresh your cart and try again.` });
 
-  const flat = Number(process.env.SHIPPING_FLAT_CENTS) || 0;
-  const freeMin = Number(process.env.FREE_SHIPPING_MIN) || 0;
-  const shipCents = freeMin && subtotalCents >= freeMin * 100 ? 0 : flat;
-  const shippingOptions = [
-    { shipping_rate_data: { display_name: shipCents ? "Standard shipping" : "Free shipping", type: "fixed_amount", fixed_amount: { amount: shipCents, currency: "usd" } } },
-  ];
-  if (process.env.LOCAL_PICKUP === "true") {
-    shippingOptions.push({ shipping_rate_data: { display_name: "Local pickup", type: "fixed_amount", fixed_amount: { amount: 0, currency: "usd" } } });
+  // Bulk-only orders need a minimum to ship (pickup is always fine); see lib/shipping.js.
+  const cfg = shippingConfig();
+  const plan = shippingPlan(planLines, cfg);
+  if (!plan.options.length) {
+    const need = (cfg.minOrderCents / 100).toFixed(2), short = (plan.shortCents / 100).toFixed(2);
+    return res.status(409).json({ error: "Bulk orders need at least $" + need + " to ship. Add $" + short + " more." });
   }
+  const shippingOptions = plan.options.map(o => ({
+    shipping_rate_data: { display_name: o.name, type: "fixed_amount", fixed_amount: { amount: o.cents, currency: "usd" } },
+  }));
+  const pickupOnly = plan.options.every(o => o.id === "pickup");
 
   const origin = process.env.SITE_URL || `https://${req.headers.host}`;
   try {
@@ -69,9 +74,12 @@ export default async function handler(req, res) {
       ...(offer ? { metadata: { offer_id: offer.id }, customer_email: offer.email } : {}),
       mode: "payment",
       line_items: lineItems,
-      shipping_address_collection: { allowed_countries: ["US"] },
+      // Pickup-only orders (bulk under the shipping minimum) don't need an address.
+      ...(pickupOnly ? {} : { shipping_address_collection: { allowed_countries: ["US"] } }),
       shipping_options: shippingOptions,
       phone_number_collection: { enabled: true },
+      // Where to pick up, shown above the Pay button when pickup is an option.
+      ...(cfg.pickup ? { custom_text: { submit: { message: `Store pickup: ${cfg.pickupName} — ${cfg.pickupAddress}. We'll text you when your order is ready.` } } } : {}),
       success_url: `${origin}/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: offer ? `${origin}/offer/${offer.id}` : `${origin}/cart`,
     });

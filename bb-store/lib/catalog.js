@@ -2,6 +2,7 @@
 // Only import this from getServerSideProps or /pages/api — never from a component.
 import { createClient } from "@supabase/supabase-js";
 import { GAMES } from "./shared";
+import { shippingConfig } from "./shipping";
 
 const url = process.env.SUPABASE_URL;
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
@@ -86,5 +87,6 @@ export function shopInfo() {
     contactEmail: process.env.CONTACT_EMAIL || "",
     instagramUrl: process.env.INSTAGRAM_URL || "",
     freeShippingMin: Number(process.env.FREE_SHIPPING_MIN) || 0,
+    shipping: shippingConfig(),
   };
 }
