@@ -12,6 +12,9 @@ import { GAME_LABEL, GAME_SHORT, COMP_SOURCES, centsToMoney, money } from "../..
 import { balanceWeights, expectedValue, oddsFor, DEFAULT_TARGET_MARGIN } from "../../lib/odds";
 
 const pct = n => `${(n * 100).toFixed(1)}%`;
+const LAST_POOL = "bb-admin-pool";
+// TCGplayer category → game, to warn when a card is being added to another game's pool.
+const TCG_GAME = { 3: "pokemon", 1: "mtg", 80: "dbs", 27: "dbs", 68: "onepiece", 86: "gundam", 81: "unionarena" };
 const STATUS = { available: "In pool", held: "In a vault", ship_requested: "To ship", shipped: "Shipped", retired: "Pulled from pool" };
 
 // Resize a photo to max 900px JPEG before upload so pack pools stay light.
@@ -66,7 +69,9 @@ export default function AdminPacks() {
     const d = await r.json();
     if (!r.ok) return setDenied(d.error || "Not allowed");
     setData(d);
-    setTierId(t => t || d.tiers.find(x => x.game === "pokemon")?.id || d.tiers[0]?.id || "");
+    let last = "";
+    try { last = localStorage.getItem(LAST_POOL) || ""; } catch {}
+    setTierId(t => t || (d.tiers.some(x => x.id === last) ? last : "") || d.tiers.find(x => x.active)?.id || d.tiers[0]?.id || "");
   }, []);
   useEffect(() => { if (me.user || me.team) load(); }, [me.user, me.team, load]);
 
@@ -86,6 +91,7 @@ export default function AdminPacks() {
   if (!data) return <Layout title="Admin"><section className="wrap section"><p className="muted">Loading…</p></section></Layout>;
 
   const tier = data.tiers.find(t => t.id === tierId);
+  const choosePool = id => { setTierId(id); try { localStorage.setItem(LAST_POOL, id); } catch {} };
   const cards = data.cards.filter(c => c.tier_id === tierId);
   const openShipments = data.shipments.filter(s => s.status === "requested");
   const synced = data.cards.filter(c => c.price_source === "tcgplayer").length + data.items.filter(i => i.price_source === "tcgplayer").length;
@@ -111,7 +117,7 @@ export default function AdminPacks() {
           <table className="table">
             <thead><tr><th>Game</th><th>Tier</th><th>Price</th><th>Pool</th><th>Avg pull value</th><th>House margin</th><th>Live</th><th /></tr></thead>
             <tbody>
-              {data.tiers.map(t => <TierRow key={t.id} t={t} active={t.id === tierId} onPick={() => setTierId(t.id)} onSave={b => act({ action: "update-tier", id: t.id, ...b }, "Tier saved.")} />)}
+              {data.tiers.map(t => <TierRow key={t.id} t={t} active={t.id === tierId} onPick={() => choosePool(t.id)} onSave={b => act({ action: "update-tier", id: t.id, ...b }, "Tier saved.")} />)}
             </tbody>
           </table>
         </div>
@@ -119,11 +125,13 @@ export default function AdminPacks() {
 
         <BuybackRules rules={data.rules} onSave={rules => act({ action: "save-buyback-rules", rules }, "Buyback rates saved.")} />
 
+        <PoolSearch cards={data.cards} tiers={data.tiers} onOpen={choosePool} />
+
         {tier && (
           <>
             <div className="pool-head-row">
               <h2 className="sub-title">{GAME_LABEL[tier.game]} · {tier.name} pool</h2>
-              <select className="input pool-switch" value={tierId} onChange={e => setTierId(e.target.value)} aria-label="Switch pool">
+              <select className="input pool-switch" value={tierId} onChange={e => choosePool(e.target.value)} aria-label="Switch pool">
                 {data.tiers.map(t => <option key={t.id} value={t.id}>{GAME_LABEL[t.game]} · {t.name} ({t.poolSize} cards)</option>)}
               </select>
             </div>
@@ -133,7 +141,10 @@ export default function AdminPacks() {
               <PackPreview tier={tier} cards={cards} />
             </div>
             <ImportPool tier={tier} act={act} allCards={data.cards} />
-            <AddCard tier={tier} pick={pick} onAdd={b => act({ action: "add-card", tier_id: tier.id, ...b }, "Card added to pool.")} />
+            <AddCard tier={tier} tiers={data.tiers} onPool={choosePool} pick={pick} onAdd={async b => {
+              try { await postJSON("/api/admin/packs", { action: "add-card", tier_id: tier.id, ...b }); await load(); return { ok: true }; }
+              catch (e) { return { error: e.message }; }
+            }} />
             <PoolCounts cards={cards} />
             <div className="table-wrap">
               <table className="table">
@@ -255,10 +266,11 @@ function TierRow({ t, active, onPick, onSave }) {
 // Add cards to a pool. On a phone: tap 📷 Snap card (or pick several photos from
 // the camera roll). Each photo is read with Claude to fill the form and becomes
 // the card's pull image; after Add, the next photo in the queue loads.
-function AddCard({ tier, pick, onAdd }) {
-  const blank = { name: "", set_name: "", grade: "", value: "", weight: "1", buyback_percent: "", image: "", tcg: null };
+function AddCard({ tier, tiers, onPool, pick, onAdd }) {
+  const blank = { name: "", set_name: "", grade: "", value: "", weight: "1", buyback_percent: "", image: "", tcg: null, game: "" };
   const [f, setF] = useState(blank);
   const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null); // { ok, text }
   const [queue, setQueue] = useState([]);   // [{ key, photo, forAi, read: null | "reading" | { items } | { error } }]
   const [shown, setShown] = useState(null); // key of the queued photo the form shows
   const [aiOff, setAiOff] = useState(false);
@@ -295,6 +307,7 @@ function AddCard({ tier, pick, onAdd }) {
         set_name: base.set_name || it.set,
         grade: base.grade || it.condition || "",
         value: base.value || (it.price ? it.price.toFixed(2) : ""),
+        game: it.game && it.game !== "other" ? it.game : base.game,
       };
     });
     setHint(it ? { q: it.number || it.name, set: it.set } : { q: "", set: "" });
@@ -329,22 +342,39 @@ function AddCard({ tier, pick, onAdd }) {
       value: (t.cents / 100).toFixed(2),
       image: cur.image || t.imageUrl, // a photo you took wins over the stock image
       tcg: t,
+      game: TCG_GAME[t.categoryId] || cur.game,
     }));
   }
   async function submit(e) {
     e.preventDefault();
-    setBusy(true);
-    if (await onAdd(f)) {
+    setBusy(true); setResult(null);
+    const name = f.name;
+    const r = await onAdd(f);
+    if (r?.ok) {
+      setResult({ ok: true, text: `✓ Added ${name} to ${GAME_LABEL[tier.game]} · ${tier.name}.` });
       if (head) nextPhoto(); else setF(blank);
+    } else {
+      setResult({ ok: false, text: `Couldn’t add it: ${r?.error || "something went wrong"}. Nothing was saved — try again.` });
     }
     setBusy(false);
   }
+
+  // The card looks like a different game than this pool (from the photo or the TCGplayer match).
+  const wrongGame = f.game && f.game !== tier.game;
+  const suggest = wrongGame && (tiers.find(t => t.game === f.game && t.name === tier.name) || tiers.find(t => t.game === f.game && t.active) || tiers.find(t => t.game === f.game));
+  const poolOptions = [...tiers].sort((a, b) => (GAME_LABEL[a.game] || "").localeCompare(GAME_LABEL[b.game] || "") || Number(b.active) - Number(a.active) || a.price_cents - b.price_cents);
 
   const reading = head && !(head.read && typeof head.read === "object");
   const readErr = head?.read?.error;
   const many = head?.read?.items?.length > 1;
   return (
     <form className="add-card-box" onSubmit={submit}>
+      <label className="add-to">
+        <span>Adding to</span>
+        <select className="input" value={tier.id} onChange={e => { onPool(e.target.value); setResult(null); }} aria-label="Pool to add to">
+          {poolOptions.map(t => <option key={t.id} value={t.id}>{GAME_LABEL[t.game]} · {t.name} ({centsToMoney(t.price_cents)}){t.active ? "" : " — hidden"}</option>)}
+        </select>
+      </label>
       <div className="snap-row">
         <label className="btn snap-btn">📷 Snap card<input type="file" accept="image/*" capture="environment" onChange={onPhotos} hidden /></label>
         <label className="btn btn-ghost-dark">🖼 Pick photos<input type="file" accept="image/*" multiple onChange={onPhotos} hidden /></label>
@@ -369,6 +399,12 @@ function AddCard({ tier, pick, onAdd }) {
       ) : (
         <p className="muted small snap-hint">Take a photo of each card (front, straight on, filling the frame). It fills in the details and becomes the image players see when they pull it. Or search TCGplayer, or type it in.</p>
       )}
+      {wrongGame && (
+        <p className="pool-warn small">
+          <span>⚠ This looks like a <b>{GAME_LABEL[f.game] || f.game}</b> card, but you’re adding it to <b>{GAME_LABEL[tier.game]} · {tier.name}</b>.</span>
+          {suggest && <> <button type="button" className="btn btn-small" onClick={() => onPool(suggest.id)}>Switch to {GAME_LABEL[suggest.game]} · {suggest.name}</button></>}
+        </p>
+      )}
       {f.tcg && <p className="small">Linked to TCGplayer #{f.tcg.productId} · {f.tcg.subType} · {centsToMoney(f.tcg.cents)}{f.tcg.autoPrice ? " · price syncs daily" : ""} <button type="button" className="link-button" onClick={() => setF({ ...f, tcg: null })}>unlink</button></p>}
       <div className="add-card">
         <input className="input" placeholder="Card name" required {...bind("name")} />
@@ -378,8 +414,9 @@ function AddCard({ tier, pick, onAdd }) {
         <input className="input num" type="number" inputMode="numeric" min="0" max="100" placeholder="Buyback % (auto)" title="Leave blank to use the buyback rates above" {...bind("buyback_percent")} />
         <input className="input num" type="number" inputMode="decimal" step="any" min="0" placeholder="Weight" title="Relative chance. 1 = normal; 0.5 = half as likely." {...bind("weight")} />
         <label className="btn btn-small btn-ghost-dark file-btn">{f.image ? "Photo ✓" : "Photo"}<input type="file" accept="image/*" capture="environment" onChange={onPhoto} hidden /></label>
-        <button className="btn btn-small" disabled={busy}>{busy ? "Adding…" : `Add to ${tier.name}`}</button>
+        <button className="btn btn-small" disabled={busy}>{busy ? "Adding…" : `Add to ${GAME_LABEL[tier.game]} · ${tier.name}`}</button>
       </div>
+      {result && <p className={result.ok ? "add-ok small" : "error small"}>{result.text}</p>}
     </form>
   );
 }
@@ -843,6 +880,33 @@ function ImportPool({ tier, act, allCards }) {
         );
       })()}
       {err && <span className="error small">{err}</span>}
+    </div>
+  );
+}
+
+// Find a card in any pool (handy when a card seems to have "disappeared" into another game's pool).
+function PoolSearch({ cards, tiers, onOpen }) {
+  const [q, setQ] = useState("");
+  const byId = Object.fromEntries(tiers.map(t => [t.id, t]));
+  const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+  const hits = words.length ? cards.filter(c => words.every(w => `${c.name} ${c.set_name} ${c.grade}`.toLowerCase().includes(w))).slice(0, 15) : [];
+  return (
+    <div className="pool-search">
+      <input className="input" type="search" placeholder="Find a card in any pool…" value={q} onChange={e => setQ(e.target.value)} aria-label="Find a card in any pool" />
+      {words.length > 0 && (
+        <ul className="pool-hits">
+          {!hits.length && <li className="muted small">No card matches.</li>}
+          {hits.map(c => {
+            const t = byId[c.tier_id];
+            return (
+              <li key={c.id}>
+                <span><b>{c.name}</b> <span className="muted small">{[c.grade, centsToMoney(c.market_value_cents), STATUS[c.status] || c.status].filter(Boolean).join(" · ")}</span></span>
+                <button className="btn btn-small btn-ghost-dark" onClick={() => { onOpen(c.tier_id); setQ(""); }}>{t ? `${GAME_SHORT[t.game]} · ${t.name}` : "Open"}</button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }
