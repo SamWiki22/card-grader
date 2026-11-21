@@ -191,6 +191,28 @@ It's safe to run again. It doesn't touch your cards, balances or tiers.
 how many cards each pack has in the pool, in vaults, shipping and removed. Every other result should be empty. If one isn't,
 it lists the cards or players whose records don't add up.
 
+## Shipping rules (store orders)
+Built in, no setup needed:
+- **Bulk** = a single priced under **$2**. If every card in an order is bulk, the order needs **$5** to ship and can use
+  **Envelope (untracked) $1.99** for up to 20 cards, or tracked shipping.
+- Everything else ships **tracked, $5**. **Free tracked shipping at $75+.**
+- **Store pickup at Toyland Marketplace, Ontario** is always offered, free, with no minimum. Pickup sales show in
+  BB Inventory's sales as "Website pickup (buyer name)", so set those aside instead of mailing them.
+- The cart tells shoppers up front, e.g. "Add $1.40 more to ship, or pick it up free at Toyland Marketplace".
+
+To change a number, add the setting in Vercel (Settings → Environment Variables) and redeploy:
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `BULK_MAX_PRICE` | `2` | Singles under this many dollars count as bulk |
+| `BULK_MIN_ORDER` | `5` | Minimum dollars for a bulk-only order to ship |
+| `ENVELOPE_SHIPPING_CENTS` | `199` | Envelope price, in cents |
+| `ENVELOPE_MAX_CARDS` | `20` | Most cards in one envelope order |
+| `SHIPPING_FLAT_CENTS` | `500` | Tracked shipping, in cents |
+| `FREE_SHIPPING_MIN` | `75` | Free tracked shipping at this many dollars |
+| `PICKUP_LOCATION` | `Toyland Marketplace, Ontario` | Pickup name shown at checkout |
+| `LOCAL_PICKUP` | on | Set to `false` to turn pickup off |
+
 ## When something goes wrong
 - **Store is empty:** check `SUPABASE_URL` / `SUPABASE_ANON_KEY`, and that items have quantity and price above 0.
 - **"Packs are coming soon":** `SUPABASE_SERVICE_ROLE_KEY` is missing, or `packs.sql` wasn't run.

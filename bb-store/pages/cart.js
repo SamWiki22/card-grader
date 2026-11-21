@@ -5,6 +5,7 @@ import ProductImage from "../components/ProductImage";
 import { useCart } from "../lib/cart";
 import { shopInfo } from "../lib/catalog";
 import { money, GAME_LABEL } from "../lib/shared";
+import { shippingPlan } from "../lib/shipping";
 
 export default function Cart({ info }) {
   const { lines, ready, setQty, remove, replace, subtotal, count } = useCart();
@@ -27,7 +28,7 @@ export default function Cart({ info }) {
           const qty = Math.min(l.qty, p.stock);
           if (qty < l.qty) changes.push(`Only ${p.stock} of ${l.name} left — quantity updated.`);
           if (p.price !== l.price) changes.push(`${l.name} is now ${money(p.price)}.`);
-          return [{ ...l, price: p.price, stock: p.stock, name: p.name, set: p.set, qty }];
+          return [{ ...l, price: p.price, stock: p.stock, name: p.name, set: p.set, type: p.type || l.type, qty }];
         });
         if (changes.length) { replace(next); setNote(changes.join(" ")); }
       })
@@ -92,9 +93,7 @@ export default function Cart({ info }) {
             <aside className="summary">
               <div className="summary-row"><span>Items</span><span>{count}</span></div>
               <div className="summary-row total"><span>Subtotal</span><span>{money(subtotal)}</span></div>
-              <p className="muted small">
-                {info.freeShippingMin > 0 && subtotal >= info.freeShippingMin ? "You’ve got free shipping!" : "Shipping & local pickup options at checkout."}
-              </p>
+              <ShippingNote plan={shippingPlan(lines.map(l => ({ type: l.type, priceCents: Math.round(l.price * 100), qty: l.qty })), info.shipping)} cfg={info.shipping} />
               {info.checkoutEnabled ? (
                 <button className="btn btn-block" onClick={checkout} disabled={busy}>{busy ? "Starting checkout…" : "Checkout"}</button>
               ) : orderEmail ? (
@@ -117,4 +116,27 @@ export default function Cart({ info }) {
 
 export async function getServerSideProps() {
   return { props: { info: shopInfo() } };
+}
+
+// Tells the shopper up front how their order can ship (rules in lib/shipping.js).
+function ShippingNote({ plan, cfg }) {
+  const m = c => money(c / 100);
+  return (
+    <div className="ship-note small">
+      {plan.shortCents > 0 ? (
+        <p className="ship-warn">
+          Bulk cards (singles under {m(cfg.bulkMaxCents)}) need a {m(cfg.minOrderCents)} order to ship. Add <b>{m(plan.shortCents)}</b> more
+          {cfg.pickup ? <>, or pick it up free at <b>{cfg.pickupName}</b>.</> : "."}
+        </p>
+      ) : plan.free ? (
+        <p>You’ve got <b>free tracked shipping</b>!</p>
+      ) : (
+        <p>
+          {plan.options.filter(o => o.id !== "pickup").map(o => o.name + " " + m(o.cents)).join(" · ")}
+          {cfg.freeMinCents > 0 && <> · Free over {m(cfg.freeMinCents)}</>}
+        </p>
+      )}
+      {cfg.pickup && plan.shortCents === 0 && <p className="muted">Or pick up free at {cfg.pickupName}.</p>}
+    </div>
+  );
 }

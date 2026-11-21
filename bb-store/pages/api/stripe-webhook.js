@@ -39,6 +39,13 @@ export default async function handler(req, res) {
   try {
     const { data: lines } = await stripe.checkout.sessions.listLineItems(session.id, { limit: 100, expand: ["data.price.product"] });
     const buyer = session.customer_details?.name || session.customer_details?.email || "customer";
+    // Store pickup orders are logged as "Website pickup (…)" so the booth knows to hold them.
+    let pickup = false;
+    const rateId = session.shipping_cost?.shipping_rate;
+    if (rateId) {
+      try { pickup = /pickup/i.test((await stripe.shippingRates.retrieve(rateId)).display_name || ""); }
+      catch (e) { console.error("shipping rate lookup", e.message); }
+    }
 
     for (const [i, line] of lines.entries()) {
       const itemId = line.price?.product?.metadata?.item_id;
@@ -59,7 +66,7 @@ export default async function handler(req, res) {
         quantity: qty,
         price: (line.price?.unit_amount || 0) / 100,
         total: (line.amount_total || 0) / 100,
-        sold_by: `Website (${buyer})`,
+        sold_by: `${pickup ? "Website pickup" : "Website"} (${buyer})`,
         thumbnail: null,
       });
       if (saleError?.code === "23505") continue;
