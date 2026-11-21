@@ -339,6 +339,16 @@ function ItemCard({ it, selected, onToggle, busy, onRotate, act }) {
   const pick = x => ({ name: x.name, set_name: x.set_name, condition: x.condition, quantity: x.quantity, price: x.price, cost: x.cost, owner: x.owner || "", game: x.game || "other" });
   const [f, setF] = useState(pick(it));
   const [noPhoto, setNoPhoto] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  // Add or replace this item's photo from the camera or photo library.
+  async function onPhoto(e) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setUploading(true);
+    try { await act({ action: "set-photo", id: it.id, photo: await shrink(file, 900) }, `Photo saved for ${it.name}.`); }
+    finally { setUploading(false); }
+  }
   const orig = pick(it);
   const dirty = Object.keys(f).some(k => String(f[k] ?? "") !== String(orig[k] ?? ""));
   const bind = k => ({ value: f[k] ?? "", onChange: e => setF({ ...f, [k]: e.target.value }) });
@@ -347,12 +357,15 @@ function ItemCard({ it, selected, onToggle, busy, onRotate, act }) {
   return (
     <article className={`inv-card${selected ? " picked" : ""}${listed ? "" : " hidden-item"}`}>
       <div className="inv-photo">
-        {noPhoto ? <div className="inv-nophoto">No photo</div> : <img src={photoUrl(it)} alt="" loading="lazy" onError={() => setNoPhoto(true)} />}
+        {noPhoto
+          ? <label className="inv-addphoto">{uploading ? "Saving…" : <><span className="inv-addphoto-icon">📷</span>Add photo</>}<input type="file" accept="image/*" onChange={onPhoto} hidden disabled={uploading} /></label>
+          : <img src={photoUrl(it)} alt="" loading="lazy" onError={() => setNoPhoto(true)} />}
         <label className="inv-select"><input type="checkbox" checked={selected} onChange={onToggle} /></label>
         {!noPhoto && (
           <div className="inv-rotate">
             <button onClick={() => onRotate(-1)} disabled={busy} title="Turn left" aria-label="Turn photo left">⟲</button>
             <button onClick={() => onRotate(1)} disabled={busy} title="Turn right" aria-label="Turn photo right">⟳</button>
+            <label className="inv-rotate-btn" title="Replace photo" aria-label="Replace photo">{uploading ? "…" : "📷"}<input type="file" accept="image/*" onChange={onPhoto} hidden disabled={uploading} /></label>
           </div>
         )}
         <span className={`inv-status ${listed ? "on" : ""}`}>{listed ? "Listed" : it.quantity <= 0 ? "Sold out" : "No price"}</span>
