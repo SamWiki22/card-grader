@@ -242,13 +242,19 @@ function AddPanel({ onClose, onAdded }) {
     e.target.value = "";
     if (!file) return;
     setReading(true); setError(""); setFound([]);
+    let photo = null;
     try {
-      const [forAi, photo] = await Promise.all([shrink(file, 1400), shrink(file, 900)]);
+      let forAi;
+      [forAi, photo] = await Promise.all([shrink(file, 1400), shrink(file, 900)]);
       const r = await postJSON("/api/admin/read-photo", { image: forAi, mode: "add" });
-      if (!r.items.length) throw new Error("Couldn’t find a card in that photo — try again closer up.");
+      if (!r.items.length) throw new Error("Couldn’t find a card in that photo — type the details in, or try again closer up.");
       setFound(r.items.map(it => ({ ...it, photo })));
       useFound(r.items[0], photo);
-    } catch (err) { setError(err.message); }
+    } catch (err) {
+      // Keep the photo even if it couldn't be read, so the details can be typed in by hand.
+      if (photo) setF(cur => ({ ...cur, photo }));
+      setError(photo ? `${err.message} Your photo is kept — fill in the name and price below.` : err.message);
+    }
     setReading(false);
   }
 
