@@ -78,6 +78,8 @@ export default async function handler(req, res) {
       ...(pickupOnly ? {} : { shipping_address_collection: { allowed_countries: ["US"] } }),
       shipping_options: shippingOptions,
       phone_number_collection: { enabled: true },
+      // Where to pick up, shown above the Pay button when pickup is an option.
+      ...(cfg.pickup ? { custom_text: { submit: { message: `Store pickup: ${cfg.pickupName} — ${cfg.pickupAddress}. We'll text you when your order is ready.` } } } : {}),
       success_url: `${origin}/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: offer ? `${origin}/offer/${offer.id}` : `${origin}/cart`,
     });

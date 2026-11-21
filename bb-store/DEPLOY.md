@@ -196,7 +196,7 @@ Built in, no setup needed:
 - **Bulk** = a single priced under **$2**. If every card in an order is bulk, the order needs **$5** to ship and can use
   **Envelope (untracked) $1.99** for up to 20 cards, or tracked shipping.
 - Everything else ships **tracked, $5**. **Free tracked shipping at $75+.**
-- **Store pickup at Toyland Marketplace, Ontario** is always offered, free, with no minimum. Pickup sales show in
+- **Store pickup at Toyland Marketplace, Booth 11** (2401 S Vineyard Ave, Unit B, Ontario, CA 91761) is always offered, free, with no minimum. Pickup sales show in
   BB Inventory's sales as "Website pickup (buyer name)", so set those aside instead of mailing them.
 - The cart tells shoppers up front, e.g. "Add $1.40 more to ship, or pick it up free at Toyland Marketplace".
 
@@ -210,7 +210,8 @@ To change a number, add the setting in Vercel (Settings → Environment Variable
 | `ENVELOPE_MAX_CARDS` | `20` | Most cards in one envelope order |
 | `SHIPPING_FLAT_CENTS` | `500` | Tracked shipping, in cents |
 | `FREE_SHIPPING_MIN` | `75` | Free tracked shipping at this many dollars |
-| `PICKUP_LOCATION` | `Toyland Marketplace, Ontario` | Pickup name shown at checkout |
+| `PICKUP_LOCATION` | `Toyland Marketplace, Booth 11, Ontario` | Pickup name shown at checkout |
+| `PICKUP_ADDRESS` | `2401 S Vineyard Ave, Unit B, Ontario, CA 91761` | Pickup address shown in the cart and at checkout |
 | `LOCAL_PICKUP` | on | Set to `false` to turn pickup off |
 
 ## When something goes wrong

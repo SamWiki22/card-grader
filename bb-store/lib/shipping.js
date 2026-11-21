@@ -4,7 +4,7 @@
 //  • Orders that are ALL bulk singles: $5 minimum to ship, and a cheap untracked
 //    envelope option (default $1.99, up to 20 cards).
 //  • Anything else ships tracked (default $5). Free shipping at $75+.
-//  • Store pickup at Toyland Marketplace is always free and has no minimum.
+//  • Store pickup at Toyland Marketplace (Booth 11, Ontario) is always free and has no minimum.
 //
 // Defaults are built in; each can be changed with a Vercel setting (see shippingConfig).
 
@@ -16,7 +16,8 @@ const DEFAULTS = {
   trackedCents: 500,
   freeMinCents: 7500,
   pickup: true,
-  pickupName: "Toyland Marketplace, Ontario",
+  pickupName: "Toyland Marketplace, Booth 11, Ontario",
+  pickupAddress: "2401 S Vineyard Ave, Unit B, Ontario, CA 91761",
 };
 
 const dollars = v => (v === undefined || v === "" || isNaN(Number(v)) ? undefined : Math.round(Number(v) * 100));
@@ -34,6 +35,7 @@ export function shippingConfig(env = process.env) {
     freeMinCents: pick(dollars(env.FREE_SHIPPING_MIN), DEFAULTS.freeMinCents),
     pickup: env.LOCAL_PICKUP !== "false",
     pickupName: env.PICKUP_LOCATION || DEFAULTS.pickupName,
+    pickupAddress: env.PICKUP_ADDRESS || DEFAULTS.pickupAddress,
   };
 }
 

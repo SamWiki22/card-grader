@@ -126,7 +126,7 @@ function ShippingNote({ plan, cfg }) {
       {plan.shortCents > 0 ? (
         <p className="ship-warn">
           Bulk cards (singles under {m(cfg.bulkMaxCents)}) need a {m(cfg.minOrderCents)} order to ship. Add <b>{m(plan.shortCents)}</b> more
-          {cfg.pickup ? <>, or pick it up free at <b>{cfg.pickupName}</b>.</> : "."}
+          {cfg.pickup ? <>, or pick it up free at <b>{cfg.pickupName}</b> ({cfg.pickupAddress}).</> : "."}
         </p>
       ) : plan.free ? (
         <p>You’ve got <b>free tracked shipping</b>!</p>
@@ -136,7 +136,7 @@ function ShippingNote({ plan, cfg }) {
           {cfg.freeMinCents > 0 && <> · Free over {m(cfg.freeMinCents)}</>}
         </p>
       )}
-      {cfg.pickup && plan.shortCents === 0 && <p className="muted">Or pick up free at {cfg.pickupName}.</p>}
+      {cfg.pickup && plan.shortCents === 0 && <p className="muted">Or pick up free at {cfg.pickupName} · {cfg.pickupAddress}</p>}
     </div>
   );
 }
