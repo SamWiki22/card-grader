@@ -397,3 +397,9 @@
   .inv-fields .inv-row > select { flex: 1 1 auto; min-width: 0; }
   .inv-fields .inv-row > input[aria-label="Condition"] { flex: 0 0 72px; }
 }
+
+/* Inventory: tap the photo box to add a photo; 📷 next to the turn buttons replaces it. */
+.inv-addphoto { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; cursor: pointer; color: var(--teal-hi, var(--teal)); font-weight: 700; font-size: 14px; border: 2px dashed rgba(79,195,182,.45); border-radius: 10px; margin: 8px; }
+.inv-addphoto-icon { font-size: 28px; }
+.inv-rotate-btn { width: 40px; height: 40px; border-radius: 10px; background: rgba(6,11,23,.85); border: 1px solid var(--line-2); color: var(--text); font-size: 18px; display: grid; place-items: center; cursor: pointer; }
+@media (max-width: 700px) { .inv-rotate-btn { width: 34px; height: 34px; font-size: 16px; } .inv-addphoto { margin: 6px; font-size: 13px; } }
