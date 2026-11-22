@@ -33,8 +33,8 @@ export default function FillNumbers({ where, onDone }) {
 
   async function save() {
     const changes = [
-      ...state.found.filter(c => !off[c.id]).map(c => ({ id: c.id, from: c.from, to: c.to })),
-      ...state.choose.filter(c => pick[c.id]).map(c => ({ id: c.id, from: c.from, to: pick[c.id] })),
+      ...state.found.filter(c => !off[c.id]).map(c => ({ id: c.id, from: c.from, to: c.to, fromSet: c.fromSet, toSet: c.toSet })),
+      ...state.choose.filter(c => pick[c.id]).map(c => { const o = c.options.find(o => o.number === pick[c.id]); return { id: c.id, from: c.from, to: o.to, fromSet: c.fromSet, toSet: o.toSet }; }),
     ];
     if (!changes.length) return setMsg("Nothing ticked to save.");
     setBusy(`Saving ${changes.length}…`); setMsg("");
@@ -73,7 +73,9 @@ export default function FillNumbers({ where, onDone }) {
                 {state.found.map(c => (
                   <li key={c.id}>
                     <label><input type="checkbox" checked={!off[c.id]} onChange={e => setOff(o => ({ ...o, [c.id]: !e.target.checked }))} />
-                      <span>{c.from} <span className="muted">→</span> <b>#{c.number}</b><span className="muted small"> · {c.set}</span></span></label>
+                      {c.moved
+                        ? <span>{c.from} <span className="muted">→</span> <b>#{c.number}</b><span className="muted small"> · set fixed: “{c.fromSet}” → {c.set}</span></span>
+                        : <span>{c.from} <span className="muted">→</span> <b>#{c.number}</b><span className="muted small"> · {c.set}</span></span>}</label>
                   </li>
                 ))}
               </ul>
@@ -88,7 +90,7 @@ export default function FillNumbers({ where, onDone }) {
                     <span>{c.from}<span className="muted small"> · {c.set}</span></span>
                     <select className="input input-sm" value={pick[c.id] || ""} onChange={e => setPick(p => ({ ...p, [c.id]: e.target.value }))}>
                       <option value="">Leave as is</option>
-                      {c.options.map(o => <option key={o.number} value={o.to}>{o.label}</option>)}
+                      {c.options.map(o => <option key={o.number} value={o.number}>{o.label}</option>)}
                     </select>
                   </li>
                 ))}

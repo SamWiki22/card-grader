@@ -1,6 +1,6 @@
 import { requireStaff, requireAdmin } from "../../../lib/auth";
 import { db, selectAll } from "../../../lib/catalog";
-import { findNumbers, hasNumber } from "../../../lib/numbers";
+import { findNumbers, hasNumber, isCode } from "../../../lib/numbers";
 
 // POST { action: "find", where: "store" | "pools", from }  → suggestions for cards with no number in their name
 // POST { action: "save", where, changes: [{ id, from, to }] } → renames; skips any card whose name changed meanwhile
@@ -29,7 +29,7 @@ export default async function handler(req, res) {
       if (error) return res.status(500).json({ error: error.message });
       rows = data || [];
     }
-    const missing = rows.filter(r => !hasNumber(r.name));
+    const missing = rows.filter(r => !hasNumber(r.name) || isCode(r.set_name));
     const from = Math.max(0, Number(b.from) || 0);
     // Same set together so each set's card list is downloaded once.
     missing.sort((a, c) => `${a.game}|${a.set_name}`.localeCompare(`${c.game}|${c.set_name}`) || String(a.id).localeCompare(String(c.id)));
@@ -44,7 +44,13 @@ export default async function handler(req, res) {
       const to = String(c.to || "").trim().slice(0, 200);
       if (!c.id || !to || !c.from) { skipped++; continue; }
       // Only rename if the name is still what we looked up (compare-and-set).
-      const { data, error } = await db.from(table).update({ name: to, updated_at: new Date().toISOString() }).eq("id", c.id).eq("name", c.from).select("id");
+      const patch = { name: to, updated_at: new Date().toISOString() };
+      let q = db.from(table);
+      const toSet = String(c.toSet || "").trim().slice(0, 160);
+      if (toSet && c.fromSet != null) patch.set_name = toSet;
+      q = q.update(patch).eq("id", c.id).eq("name", c.from);
+      if (patch.set_name) q = q.eq("set_name", String(c.fromSet));
+      const { data, error } = await q.select("id");
       if (error) { console.error(error); skipped++; } else if (data?.length) saved++; else skipped++;
     }
     return res.json({ ok: true, saved, skipped });

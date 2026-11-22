@@ -23,6 +23,10 @@ const base = s => norm(String(s || "").replace(/\s*\([^)]*\)\s*/g, " ").replace(
 
 const setKey = s => norm(String(s || "").replace(/\([^)]*\)/g, " ").replace(/^[^:]{1,12}:\s*/, ""));
 
+const squash = s => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+// A card number typed where the set should be ("OP17-070", "BT1-031", "FB01-001").
+export const isCode = s => /^[A-Z]{1,5}\d{0,3}[A-Z]?-[A-Z]?\d{2,4}[A-Z]?$/i.test(String(s || "").trim());
+
 // Does this name already carry a card number? ("223/197", "#12", "BT1-031", "OP01-016", "FB01-001", "SV049", "123")
 export function hasNumber(name) {
   const s = String(name || "");
@@ -61,6 +65,33 @@ export async function findNumbers(rows, { deadline = Date.now() + 8000 } = {}) {
         if (p) { found.push({ id: r.id, from: r.name, to: withNumber(r.name, ext(p, "Number")), number: ext(p, "Number"), set: r.set_name }); continue; }
       }
       if (!sourcesFor(r.game).length) { skipped.push({ id: r.id, name: r.name, why: "game not on TCGplayer" }); continue; }
+
+      // 2. The card number was typed in the Set box ("OP17-070"): find that number,
+      //    put it after the name and fill in the real set name.
+      if (isCode(r.set_name)) {
+        if (!groupCache.has(r.game)) groupCache.set(r.game, await groupsFor(r.game));
+        const code = r.set_name.trim().toUpperCase();
+        const prefix = squash(code.split("-")[0]);
+        const all = groupCache.get(r.game);
+        let groups = all.filter(g => g.abbr && squash(g.abbr).startsWith(prefix));
+        if (!groups.length) groups = all;
+        let hits = [];
+        for (const g of groups) {
+          if (Date.now() > deadline + 4000) break;
+          for (const p of await products(g.cat, g.groupId)) if (ext(p, "Number").toUpperCase() === code) hits.push({ p, g });
+        }
+        const name = hasNumber(r.name) ? r.name : withNumber(r.name, code);
+        const mine = hits.filter(h => norm(h.p.name) === norm(r.name));
+        const same = mine.length ? mine : hits.filter(h => base(h.p.name) === base(r.name));
+        // Prefer the main set over its release-event / promo versions.
+        const main = same.filter(h => !/\bRE\b|release event/i.test(`${h.g.abbr} ${h.g.name}`));
+        const pickFrom = main.length ? main : same;
+        const sets = [...new Set(pickFrom.map(h => h.g.name))];
+        if (sets.length === 1) found.push({ id: r.id, from: r.name, fromSet: r.set_name, to: name, number: code, set: sets[0], toSet: sets[0], moved: true });
+        else if (hits.length) choose.push({ id: r.id, from: r.name, fromSet: r.set_name, set: r.set_name, options: [...new Map(hits.map(h => [h.g.name, h])).values()].slice(0, 12).map(h => ({ number: `${code}|${h.g.groupId}`, label: `${h.p.name} · ${h.g.name}`, to: name, toSet: h.g.name })) });
+        else skipped.push({ id: r.id, name: r.name, why: `card number ${code} (typed in the Set box) not found on TCGplayer` });
+        continue;
+      }
       if (!r.set_name) { skipped.push({ id: r.id, name: r.name, why: "no set listed" }); continue; }
 
       // 2. Match the set by name (or its code, e.g. "MH3"), then the card by name.
