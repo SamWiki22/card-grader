@@ -56,12 +56,14 @@ export function toProduct(row) {
 // Everything that's in stock and has a price is for sale.
 export async function listProducts() {
   if (!db) return [];
-  const { data, error } = await db
+  // selectAll pages past Supabase's 1,000-row limit, so big bulk inventories all show.
+  const { data, error } = await selectAll(() => db
     .from("items")
     .select(PUBLIC_COLUMNS)
     .gt("quantity", 0)
     .gt("price", 0)
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    .order("id"));
   if (error) throw error;
   return data.map(toProduct);
 }
