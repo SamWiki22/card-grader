@@ -209,6 +209,11 @@ export default function Inventory() {
           <select className="input" value={stock} onChange={e => setStock(e.target.value)}><option value="in">In stock</option><option value="out">Sold out / hidden</option><option value="all">Everything</option></select>
         </div>
 
+        <div className="inv-download">
+          <button className="btn btn-small btn-ghost-dark" disabled={!shown.length} onClick={() => downloadCSV(shown)}>⬇ Download {shown.length.toLocaleString()} item{shown.length === 1 ? "" : "s"} (spreadsheet)</button>
+          <span className="muted small">What’s shown above, sorted by game → set → name. Pick a game to download just that TCG.</span>
+        </div>
+
         <div className="inv-bulk">
           <label className="check"><input type="checkbox" checked={allShownSelected} onChange={() => setSelected(allShownSelected ? [] : shown.map(it => it.id))} /><span>{selected.length ? `${selected.length} selected` : `Select all ${shown.length}`}</span></label>
           <button className="btn btn-small btn-ghost-dark" disabled={!selected.length} onClick={async () => { if (confirm(`Hide ${selected.length} item(s) by setting quantity to 0? Nothing is deleted.`)) { if (await act({ action: "set-quantity", ids: selected, quantity: 0 }, r => `${r.count} item(s) set to 0 — hidden from the store.`)) setSelected([]); } }}>Mark sold out</button>
@@ -645,4 +650,43 @@ function PhotoViewer({ items, id, onGo, onClose, onSave, onClosed }) {
       </div>
     </div>
   );
+}
+
+// Inventory → CSV (opens in Numbers, Excel, Google Sheets), sorted by game, then set, then name.
+function downloadCSV(items) {
+  const gameOrder = Object.fromEntries(GAMES.map((g, i) => [g.id, i]));
+  const rows = [...items].sort((a, b) =>
+    (gameOrder[a.game] ?? 99) - (gameOrder[b.game] ?? 99) ||
+    String(a.set_name || "").localeCompare(String(b.set_name || "")) ||
+    String(a.name || "").localeCompare(String(b.name || ""), undefined, { numeric: true }));
+  const cols = [
+    ["Game", it => GAME_LABEL[it.game] || it.game || ""],
+    ["Type", it => TYPES[it.type] || it.type || ""],
+    ["Name", it => it.name],
+    ["Set", it => it.set_name],
+    ["Rarity", it => it.rarity || ""],
+    ["Foil", it => (it.foil ? "Foil" : "")],
+    ["Condition", it => it.condition],
+    ["Qty", it => it.quantity],
+    ["Price", it => Number(it.price || 0).toFixed(2)],
+    ["Total value", it => (Number(it.price || 0) * Number(it.quantity || 0)).toFixed(2)],
+    ["Cost", it => Number(it.cost || 0).toFixed(2)],
+    ["Owner", it => OWNER_LABEL[it.owner] || it.owner || ""],
+    ["SKU", it => it.sku || ""],
+    ["TCGplayer ID", it => it.tcg_product_id || ""],
+    ["Price source", it => (it.price_source === "tcgplayer" ? "TCGplayer sync" : "Manual")],
+    ["Added", it => (it.created_at ? String(it.created_at).slice(0, 10) : "")],
+  ];
+  const cell = v => { const t = String(v ?? ""); return /[",\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
+  const csv = [cols.map(c => c[0]), ...rows.map(it => cols.map(c => c[1](it)))].map(r => r.map(cell).join(",")).join("\r\n");
+  const games = [...new Set(rows.map(it => it.game))];
+  const label = games.length === 1 ? (GAME_LABEL[games[0]] || games[0]).replace(/[^A-Za-z0-9]+/g, "-") : "all-games";
+  const d = new Date();
+  const name = `bearded-bear-inventory-${label}-${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}.csv`;
+  // The BOM makes Excel read accents (Pokémon) correctly.
+  const url = URL.createObjectURL(new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" }));
+  const a = document.createElement("a");
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
