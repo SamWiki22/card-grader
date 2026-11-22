@@ -133,13 +133,13 @@ export default function Vault() {
           </div>
         </Modal>
       )}
-      {modal === "ship" && <ShipForm cards={held.filter(c => selected.includes(c.id))} fee={data.ship_fee_cents} onClose={() => setModal(null)}
+      {modal === "ship" && <ShipForm cards={held.filter(c => selected.includes(c.id))} fee={data.ship_fee_cents} combine={data.combine_with_cart} onClose={() => setModal(null)}
         onDone={async n => { setModal(null); setSelected([]); setMsg(`Shipping requested for ${n} card${n === 1 ? "" : "s"}. We’ll email you tracking.`); await load(); me.refresh(); }} />}
     </AppShell>
   );
 }
 
-function ShipForm({ cards, fee, onClose, onDone }) {
+function ShipForm({ cards, fee, combine, onClose, onDone }) {
   const [a, setA] = useState({ name: "", line1: "", line2: "", city: "", state: "", zip: "" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -164,6 +164,7 @@ function ShipForm({ cards, fee, onClose, onDone }) {
           <label className="field">ZIP<input className="input" required autoComplete="postal-code" {...f("zip")} /></label>
         </div>
         <p className="muted small">{fee ? `Shipping is ${centsToMoney(fee)}, taken from your balance.` : "Shipping is free."} US addresses only.</p>
+        {combine && <p className="muted small">Buying from the shop too? Tick <b>“Ship my vault cards”</b> in your cart instead — they go in the same package with no extra shipping.</p>}
         <button className="btn btn-block" disabled={busy}>{busy ? "Requesting…" : "Request shipping"}</button>
         {error && <p className="error">{error}</p>}
       </form>

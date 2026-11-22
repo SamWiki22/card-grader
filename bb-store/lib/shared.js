@@ -61,3 +61,23 @@ export const TCG_SOURCES = [
 
 // Condition / grade suggestions for card submissions.
 export const GRADE_OPTIONS = ["Raw NM", "Raw LP", "Raw MP", "Raw HP", "PSA 10", "PSA 9", "PSA 8", "BGS 10", "BGS 9.5", "CGC 10", "CGC 9.5", "TAG 10"];
+
+// ── Rarity + standard bulk prices ────────────────────────────────────────────
+// Rarity is stored the way TCGplayer writes it for that game ("C", "UC", "SR", "Common", "M"…).
+// Bulk cards never sell below these standard rates (cents). Higher rarities have no floor.
+export const BULK_RATES = { common: 29, uncommon: 59, rare: 100, foilRare: 200 };
+export const RARITY_SUGGESTIONS = ["C", "UC", "R", "SR", "SEC", "L", "SP", "U", "M", "Common", "Uncommon", "Rare", "Super Rare", "Promo"];
+// "C", "Common", "C+", "C*" → common; "UC", "U", "Uncommon" → uncommon; "R", "Rare", "R+" → rare.
+export function bulkClass(rarity) {
+  const r = String(rarity || "").trim().toLowerCase().replace(/[+*]+$/, "");
+  if (r === "c" || r === "common") return "common";
+  if (r === "uc" || r === "u" || r === "uncommon") return "uncommon";
+  if (r === "r" || r === "rare") return "rare";
+  return "";
+}
+// Lowest price (cents) a single may sell for, or 0 if its rarity has no standard rate.
+export function bulkFloorCents(rarity, foil, rates = BULK_RATES) {
+  const c = bulkClass(rarity);
+  if (c === "rare") return foil ? rates.foilRare : rates.rare;
+  return c ? rates[c] : 0;
+}

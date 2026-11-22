@@ -497,3 +497,7 @@ end $$;
 
 revoke all on function sell_to_store(uuid, text) from public, anon, authenticated;
 grant execute on function sell_to_store(uuid, text) to service_role;
+
+-- ── v-rarity: rarity + foil on store singles (standard bulk prices) ─────────
+alter table if exists items add column if not exists rarity text not null default '';
+alter table if exists items add column if not exists foil boolean not null default false;

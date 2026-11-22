@@ -6,12 +6,22 @@ import { useCart } from "../lib/cart";
 import { shopInfo } from "../lib/catalog";
 import { money, GAME_LABEL } from "../lib/shared";
 import { shippingPlan } from "../lib/shipping";
+import { useMe } from "../lib/me";
 
 export default function Cart({ info }) {
   const { lines, ready, setQty, remove, replace, subtotal, count } = useCart();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [note, setNote] = useState("");
+  // Signed-in pack players can add the cards in their vault to this package.
+  const me = useMe();
+  const [vault, setVault] = useState([]);
+  const [withVault, setWithVault] = useState(false);
+  useEffect(() => {
+    if (!me?.user) return;
+    fetch("/api/vault").then(r => r.ok ? r.json() : null).then(d => setVault((d?.cards || []).filter(c => c.status === "held"))).catch(() => {});
+  }, [me?.user]);
+  const vaultCards = withVault ? vault.length : 0;
 
   // Refresh prices/stock from the live inventory whenever the cart opens.
   useEffect(() => {
@@ -39,7 +49,7 @@ export default function Cart({ info }) {
   async function checkout() {
     setBusy(true); setError("");
     try {
-      const r = await fetch("/api/checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ lines: lines.map(l => ({ id: l.id, qty: l.qty })) }) });
+      const r = await fetch("/api/checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ lines: lines.map(l => ({ id: l.id, qty: l.qty })), vault: withVault }) });
       const data = await r.json();
       if (!r.ok) throw new Error(data.error || "Checkout failed");
       window.location.href = data.url;
@@ -93,7 +103,13 @@ export default function Cart({ info }) {
             <aside className="summary">
               <div className="summary-row"><span>Items</span><span>{count}</span></div>
               <div className="summary-row total"><span>Subtotal</span><span>{money(subtotal)}</span></div>
-              <ShippingNote plan={shippingPlan(lines.map(l => ({ type: l.type, priceCents: Math.round(l.price * 100), qty: l.qty })), info.shipping)} cfg={info.shipping} />
+              {vault.length > 0 && (
+                <label className="vault-addon small">
+                  <input type="checkbox" checked={withVault} onChange={e => setWithVault(e.target.checked)} />
+                  <span>Ship my <b>{vault.length} vault card{vault.length === 1 ? "" : "s"}</b> in this package — no extra shipping.</span>
+                </label>
+              )}
+              <ShippingNote plan={shippingPlan(lines.map(l => ({ type: l.type, priceCents: Math.round(l.price * 100), qty: l.qty })), info.shipping, { vaultCards })} cfg={info.shipping} />
               {info.checkoutEnabled ? (
                 <button className="btn btn-block" onClick={checkout} disabled={busy}>{busy ? "Starting checkout…" : "Checkout"}</button>
               ) : orderEmail ? (

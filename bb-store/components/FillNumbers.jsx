@@ -21,7 +21,7 @@ export default function FillNumbers({ where, onDone }) {
         setBusy(acc.total ? `Looking up cards on TCGplayer… ${Math.min(from, acc.total)} of ${acc.total}` : "Looking up cards on TCGplayer…");
         const r = await postJSON("/api/admin/card-numbers", { action: "find", where, from });
         acc.found.push(...r.found); acc.choose.push(...r.choose); acc.skipped.push(...r.skipped);
-        acc.total = r.total; acc.checked = r.checked;
+        acc.total = r.total; acc.checked = r.checked; acc.withRarity = r.withRarity;
         setState({ ...acc });
         if (r.done || r.next <= from) break;
         from = r.next;
@@ -33,26 +33,27 @@ export default function FillNumbers({ where, onDone }) {
 
   async function save() {
     const changes = [
-      ...state.found.filter(c => !off[c.id]).map(c => ({ id: c.id, from: c.from, to: c.to, fromSet: c.fromSet, toSet: c.toSet })),
-      ...state.choose.filter(c => pick[c.id]).map(c => { const o = c.options.find(o => o.number === pick[c.id]); return { id: c.id, from: c.from, to: o.to, fromSet: c.fromSet, toSet: o.toSet }; }),
+      ...state.found.filter(c => !off[c.id]).map(c => ({ id: c.id, from: c.from, to: c.to, fromSet: c.fromSet, toSet: c.toSet, rarity: c.rarity })),
+      ...state.choose.filter(c => pick[c.id]).map(c => { const o = c.options.find(o => o.number === pick[c.id]); return { id: c.id, from: c.from, to: o.to, fromSet: c.fromSet, toSet: o.toSet, rarity: o.rarity }; }),
     ];
     if (!changes.length) return setMsg("Nothing ticked to save.");
     setBusy(`Saving ${changes.length}…`); setMsg("");
     try {
       const r = await postJSON("/api/admin/card-numbers", { action: "save", where, changes });
       setState(null); setOpen(false);
-      onDone?.(`Added card numbers to ${r.saved} card${r.saved === 1 ? "" : "s"}${r.skipped ? ` (${r.skipped} skipped because they were edited meanwhile)` : ""}.`);
+      onDone?.(`Updated ${r.saved} card${r.saved === 1 ? "" : "s"}${where === "store" ? " (numbers, sets, rarity — bulk cards raised to the standard price)" : ""}${r.skipped ? ` (${r.skipped} skipped because they were edited meanwhile)` : ""}.`);
     } catch (e) { setMsg(`Error: ${e.message}`); }
     setBusy("");
   }
 
-  if (!open) return <button className="btn btn-ghost-dark" onClick={find}># Fill in card numbers</button>;
+  const label = where === "store" ? "Fill in numbers & rarity" : "Fill in card numbers";
+  if (!open) return <button className="btn btn-ghost-dark" onClick={find}># {label}</button>;
 
   const ticked = state ? state.found.filter(c => !off[c.id]).length + state.choose.filter(c => pick[c.id]).length : 0;
   return (
     <div className="fill-nums">
       <div className="fill-nums-head">
-        <b>Fill in card numbers</b>
+        <b>{label}</b>
         <button className="btn btn-small btn-ghost-dark" onClick={() => { setOpen(false); setState(null); }} disabled={!!busy}>Close</button>
       </div>
       {busy && <p className="muted small">{busy}</p>}
@@ -60,8 +61,8 @@ export default function FillNumbers({ where, onDone }) {
       {state && (
         <>
           <p className="small">
-            {state.total === 0 ? `All ${state.checked} cards already have a number. 🎉` :
-              <>{state.total} of {state.checked} cards had no number. Found <b>{state.found.length}</b>{state.choose.length ? <>, <b>{state.choose.length}</b> need you to pick the printing</> : ""}{state.skipped.length ? <>, {state.skipped.length} couldn’t be matched</> : ""}.</>}
+            {state.total === 0 ? `All ${state.checked} cards already have a number${state.withRarity ? " and rarity" : ""}. 🎉` :
+              <>{state.total} of {state.checked} cards were missing a number{state.withRarity ? " or rarity" : ""}. Found <b>{state.found.length}</b>{state.choose.length ? <>, <b>{state.choose.length}</b> need you to pick the printing</> : ""}{state.skipped.length ? <>, {state.skipped.length} couldn’t be matched</> : ""}.</>}
           </p>
           {state.found.length > 0 && (
             <>
@@ -73,9 +74,12 @@ export default function FillNumbers({ where, onDone }) {
                 {state.found.map(c => (
                   <li key={c.id}>
                     <label><input type="checkbox" checked={!off[c.id]} onChange={e => setOff(o => ({ ...o, [c.id]: !e.target.checked }))} />
-                      {c.moved
-                        ? <span>{c.from} <span className="muted">→</span> <b>#{c.number}</b><span className="muted small"> · set fixed: “{c.fromSet}” → {c.set}</span></span>
-                        : <span>{c.from} <span className="muted">→</span> <b>#{c.number}</b><span className="muted small"> · {c.set}</span></span>}</label>
+                      <span>
+                        {c.from}
+                        {c.to !== c.from && <> <span className="muted">→</span> <b>#{c.number}</b></>}
+                        {c.rarity && <> <span className="rarity-tag">{c.rarity}</span></>}
+                        <span className="muted small"> · {c.moved ? <>set fixed: “{c.fromSet}” → {c.set}</> : c.set}</span>
+                      </span></label>
                   </li>
                 ))}
               </ul>

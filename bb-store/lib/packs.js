@@ -21,7 +21,9 @@ export function buybackPercent(valueCents, override, rules) {
   return pct;
 }
 export const buybackCents = (valueCents, pct) => Math.floor(valueCents * pct / 100);
-export const SHIP_FEE_CENTS = Math.max(0, Number(process.env.VAULT_SHIP_FEE_CENTS) || 0);
+import { shippingConfig } from "./shipping";
+// Shipping vault cards on their own (paid from balance). Default $6.99; Vercel setting SHIPPING_VAULT.
+export const SHIP_FEE_CENTS = shippingConfig().vaultCents;
 
 const CARD_COLUMNS = "id,tier_id,name,set_name,grade,market_value_cents,weight";
 

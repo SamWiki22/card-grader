@@ -1,4 +1,5 @@
 import { requireUser } from "../../../lib/auth";
+import { stripe } from "../../../lib/stripe";
 import { db } from "../../../lib/catalog";
 import { getBalance, getBuybackRules, buybackPercent, buybackCents, SHIP_FEE_CENTS } from "../../../lib/packs";
 
@@ -17,6 +18,7 @@ export default async function handler(req, res) {
   res.json({
     balance_cents: balance,
     ship_fee_cents: SHIP_FEE_CENTS,
+    combine_with_cart: !!stripe,
     cards: (cards.data || []).map(({ buyback_percent, ...c }) => {
       const pct = buybackPercent(c.market_value_cents, buyback_percent, rules);
       return { ...c, buyback_percent: pct, buyback_cents: buybackCents(c.market_value_cents, pct) };

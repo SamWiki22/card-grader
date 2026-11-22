@@ -3,6 +3,11 @@ import { getProductsByIds } from "../../lib/catalog";
 import { GAME_LABEL } from "../../lib/shared";
 import { getOffer, offerPrice } from "../../lib/offers";
 import { shippingConfig, shippingPlan } from "../../lib/shipping";
+import { getUser } from "../../lib/auth";
+import { db } from "../../lib/catalog";
+
+// Vault card ids ride along in Stripe metadata (500 characters per key), split over a few keys.
+const VAULT_KEYS = 4, PER_KEY = 28;
 
 // Builds a Stripe Checkout session from the cart. Prices and stock come from
 // the inventory database — never from the browser.
@@ -56,9 +61,21 @@ export default async function handler(req, res) {
   }
   if (problems.length) return res.status(409).json({ error: `${problems.join(" ")} Refresh your cart and try again.` });
 
+  // "Ship my vault cards with this order": every card the shopper holds in their vault.
+  let user = null, vaultIds = [];
+  if (req.body?.vault && !offer) {
+    user = await getUser(req, res);
+    if (!user) return res.status(401).json({ error: "Sign in to add your vault cards to this order." });
+    const { data, error } = await db.from("pack_cards").select("id").eq("owner_id", user.id).eq("status", "held").order("held_at").limit(VAULT_KEYS * PER_KEY);
+    if (error) { console.error(error); return res.status(500).json({ error: "Couldn’t load your vault. Try again." }); }
+    vaultIds = (data || []).map(c => c.id);
+  }
+  const vaultMeta = {};
+  for (let k = 0; k * PER_KEY < vaultIds.length; k++) vaultMeta[`vault_${k}`] = vaultIds.slice(k * PER_KEY, (k + 1) * PER_KEY).join(",");
+
   // Bulk-only orders need a minimum to ship (pickup is always fine); see lib/shipping.js.
   const cfg = shippingConfig();
-  const plan = shippingPlan(planLines, cfg);
+  const plan = shippingPlan(planLines, cfg, { vaultCards: vaultIds.length });
   if (!plan.options.length) {
     const need = (cfg.minOrderCents / 100).toFixed(2), short = (plan.shortCents / 100).toFixed(2);
     return res.status(409).json({ error: "Bulk orders need at least $" + need + " to ship. Add $" + short + " more." });
@@ -72,6 +89,7 @@ export default async function handler(req, res) {
   try {
     const session = await stripe.checkout.sessions.create({
       ...(offer ? { metadata: { offer_id: offer.id }, customer_email: offer.email } : {}),
+      ...(vaultIds.length ? { metadata: { user_id: user.id, ...vaultMeta }, customer_email: user.email || undefined } : {}),
       mode: "payment",
       line_items: lineItems,
       // Pickup-only orders (bulk under the shipping minimum) don't need an address.

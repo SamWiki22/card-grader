@@ -6,7 +6,7 @@ import { AdminGate } from "../../components/TeamLogin";
 import TcgPicker from "../../components/TcgPicker";
 import { useMe, postJSON, accessOf } from "../../lib/me";
 import FillNumbers from "../../components/FillNumbers";
-import { GAMES, GAME_LABEL, money } from "../../lib/shared";
+import { GAMES, GAME_LABEL, money, bulkFloorCents, RARITY_SUGGESTIONS } from "../../lib/shared";
 
 const TYPES = { single: "Single", box: "Box", pack: "Pack" };
 const OWNERS = [{ id: "sam", label: "Sam" }, { id: "bear_umer", label: "Bear / Umer" }, { id: "shared", label: "Shared 50/50" }];
@@ -85,6 +85,21 @@ export default function Inventory() {
   const [busy, setBusy] = useState("");
   const [adding, setAdding] = useState(false);
   const [recording, setRecording] = useState(false);
+
+  // Standard bulk prices (C $0.29 · UC $0.59 · R $1 · foil R $2): preview, confirm, save.
+  async function bulkPrices() {
+    setMsg("");
+    try {
+      const r = await postJSON("/api/admin/items", { action: "bulk-prices" });
+      const missing = r.noRarity ? ` (${r.noRarity} in-stock singles have no rarity yet — use “# Fill in numbers & rarity” first.)` : "";
+      if (!r.count) return setMsg(`Every card with a rarity is already at or above the standard bulk price.${missing}`);
+      const eg = r.sample.slice(0, 4).map(x => `${x.name} (${x.rarity}${x.foil ? " foil" : ""}) ${money(x.from)} → ${money(x.to)}`).join("\n");
+      if (!confirm(`Raise ${r.count} card${r.count === 1 ? "" : "s"} to the standard bulk price?\n\nC $0.29 · UC $0.59 · R $1 · Foil R $2\n\ne.g.\n${eg}`)) return;
+      const s = await postJSON("/api/admin/items", { action: "bulk-prices", apply: true });
+      await load();
+      setMsg(`Raised ${s.saved} card${s.saved === 1 ? "" : "s"} to the standard bulk price.${missing}`);
+    } catch (e) { setMsg(`Error: ${e.message}`); }
+  }
 
   const load = useCallback(async () => {
     const r = await fetch("/api/admin/items");
@@ -177,6 +192,7 @@ export default function Inventory() {
             <button className="btn" onClick={() => { setAdding(true); setMsg(""); }}>+ Add cards or sealed</button>
             <button className="btn btn-ghost-dark" onClick={() => { setRecording(true); setMsg(""); }}>📷 Record sales</button>
             <FillNumbers where="store" onDone={async m => { await load(); setMsg(m); }} />
+            <button className="btn btn-ghost-dark" onClick={bulkPrices}>💲 Bulk prices</button>
           </div>
         )}
 
@@ -212,7 +228,7 @@ export default function Inventory() {
 // Fast entry: find on TCGplayer (remembers the set) → set qty / condition / owner → Add, repeat.
 function AddPanel({ onClose, onAdded }) {
   const prefs = (() => { try { return JSON.parse(localStorage.getItem(PREFS)) || {}; } catch { return {}; } })();
-  const blank = { type: "single", game: prefs.game || "pokemon", owner: prefs.owner || "", condition: prefs.condition || "NM", name: "", set_name: "", quantity: 1, price: "", cost: "", notes: "", photo: "", tcg: null };
+  const blank = { type: "single", game: prefs.game || "pokemon", owner: prefs.owner || "", condition: prefs.condition || "NM", name: "", set_name: "", rarity: "", foil: false, quantity: 1, price: "", cost: "", notes: "", photo: "", tcg: null };
   const [f, setF] = useState(blank);
   const [picker, setPicker] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -269,6 +285,8 @@ function AddPanel({ onClose, onAdded }) {
       condition: t.sealed ? "" : cur.condition || "NM",
       name: t.sealed || !t.number ? t.name : `${t.name} ${t.number}`.replace(/ - (\S+) (\1)$/, " $1"),
       set_name: t.setName,
+      rarity: t.sealed ? "" : t.rarity || cur.rarity || "",
+      foil: !t.sealed && TCG_GAME[t.categoryId] === "mtg" && /foil/i.test(t.subType || ""),
       price: (t.cents / 100).toFixed(2),
       photo: cur.photo && cur.photo.startsWith("data:") ? cur.photo : t.imageUrl, // keep a real photo you just took
       tcg: t,
@@ -323,6 +341,7 @@ function AddPanel({ onClose, onAdded }) {
               <><input className="input" list="conds" placeholder="Condition" {...bind("condition")} aria-label="Condition" />
               <datalist id="conds">{CONDITIONS.map(c => <option key={c} value={c} />)}</datalist></>
             )}
+            {f.type === "single" && <RarityInput f={f} setF={setF} />}
             <select className="input" {...bind("owner")} aria-label="Owner"><option value="">Owner…</option>{OWNERS.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}</select>
           </div>
           <div className="add-row">
@@ -340,11 +359,24 @@ function AddPanel({ onClose, onAdded }) {
     </>
   );
 }
+// Rarity box + Foil switch, with the standard bulk price shown when it applies.
+function RarityInput({ f, setF, small }) {
+  const floor = bulkFloorCents(f.rarity, f.foil);
+  return (
+    <span className="rarity-input">
+      <input className={`input${small ? " input-sm" : ""}`} list="rarities" placeholder="Rarity (C, UC, R, SR…)" value={f.rarity || ""} onChange={e => setF({ ...f, rarity: e.target.value })} aria-label="Rarity" />
+      <datalist id="rarities">{RARITY_SUGGESTIONS.map(r => <option key={r} value={r} />)}</datalist>
+      <label className="foil-check"><input type="checkbox" checked={!!f.foil} onChange={e => setF({ ...f, foil: e.target.checked })} /> Foil</label>
+      {floor > 0 && <span className="muted small">min {money(floor / 100)}</span>}
+    </span>
+  );
+}
+
 // TCGplayer category → store game.
 const TCG_GAME = { 3: "pokemon", 1: "mtg", 80: "dbs", 27: "dbs", 68: "onepiece", 86: "gundam", 81: "unionarena", 89: "riftbound" };
 
 function ItemCard({ it, selected, onToggle, busy, onRotate, act }) {
-  const pick = x => ({ name: x.name, set_name: x.set_name, condition: x.condition, quantity: x.quantity, price: x.price, cost: x.cost, owner: x.owner || "", game: x.game || "other" });
+  const pick = x => ({ name: x.name, set_name: x.set_name, condition: x.condition, quantity: x.quantity, price: x.price, cost: x.cost, owner: x.owner || "", game: x.game || "other", ...(x.rarity !== undefined ? { rarity: x.rarity || "", foil: !!x.foil } : {}) });
   const [f, setF] = useState(pick(it));
   const [noPhoto, setNoPhoto] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -385,6 +417,7 @@ function ItemCard({ it, selected, onToggle, busy, onRotate, act }) {
           <select className="input input-sm" {...bind("game")} aria-label="Game">{GAMES.map(g => <option key={g.id} value={g.id}>{GAME_LABEL[g.id]}</option>)}</select>
           <input className="input input-sm" {...bind("condition")} placeholder="Cond." aria-label="Condition" />
         </div>
+        {it.type === "single" && it.rarity !== undefined && <div className="inv-row"><RarityInput f={f} setF={setF} small /></div>}
         <select className="input input-sm" {...bind("owner")} aria-label="Owner"><option value="">No owner</option>{OWNERS.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}</select>
         <div className="inv-row">
           <div className="qty qty-small">
