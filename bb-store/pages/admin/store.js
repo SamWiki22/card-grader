@@ -341,9 +341,9 @@ function AddPanel({ onClose, onAdded }) {
               <><input className="input" list="conds" placeholder="Condition" {...bind("condition")} aria-label="Condition" />
               <datalist id="conds">{CONDITIONS.map(c => <option key={c} value={c} />)}</datalist></>
             )}
-            {f.type === "single" && <RarityInput f={f} setF={setF} />}
             <select className="input" {...bind("owner")} aria-label="Owner"><option value="">Owner…</option>{OWNERS.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}</select>
           </div>
+          {f.type === "single" && <div className="add-row"><RarityInput f={f} setF={setF} /></div>}
           <div className="add-row">
             <label className="add-num">Qty<input className="input" type="number" min="0" {...bind("quantity")} /></label>
             <label className="add-num">Price $<input className="input" type="number" step="0.01" min="0" {...bind("price")} /></label>
