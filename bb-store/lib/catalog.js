@@ -89,7 +89,7 @@ export function shopInfo() {
     checkoutEnabled: !!process.env.STRIPE_SECRET_KEY,
     contactEmail: process.env.CONTACT_EMAIL || "",
     instagramUrl: process.env.INSTAGRAM_URL || "",
-    freeShippingMin: Number(process.env.FREE_SHIPPING_MIN) || 0,
+    freeShippingMin: shippingConfig().freeMinCents / 100,
     shipping: shippingConfig(),
   };
 }

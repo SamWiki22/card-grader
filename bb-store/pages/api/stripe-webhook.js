@@ -1,6 +1,7 @@
 import { stripe } from "../../lib/stripe";
 import { db } from "../../lib/catalog";
 import { changeQty } from "../../lib/stock";
+import { shippingConfig } from "../../lib/shipping";
 
 // Stripe needs the raw body to verify the signature.
 export const config = { api: { bodyParser: false } };
@@ -79,6 +80,8 @@ export default async function handler(req, res) {
         catch (e) { console.error(`STOCK NOT REDUCED for website sale stripe_${session.id}_${i} (${item.name} ×${qty}):`, e.message); }
       }
     }
+    // Vault cards the shopper added to this order go in the same package (no extra fee).
+    await shipVaultCards(session, buyer, pickup);
     // An offer bought through its link is done.
     if (session.metadata?.offer_id) {
       await db.from("offers").update({ status: "purchased", updated_at: new Date().toISOString() }).eq("id", session.metadata.offer_id);
@@ -88,4 +91,22 @@ export default async function handler(req, res) {
     console.error(e);
     res.status(500).json({ error: "Failed to record sale" });
   }
+}
+
+async function shipVaultCards(session, buyer, pickup) {
+  const m = session.metadata || {};
+  const ids = Object.keys(m).filter(k => /^vault_\d+$/.test(k)).sort().flatMap(k => String(m[k]).split(",")).filter(Boolean);
+  if (!m.user_id || !ids.length) return;
+  // Only cards still in their vault (a retried webhook finds none and does nothing).
+  const { data } = await db.from("pack_cards").select("id").eq("owner_id", m.user_id).eq("status", "held").in("id", ids);
+  const cards = (data || []).map(c => c.id);
+  if (!cards.length) return;
+  const sd = session.collected_information?.shipping_details || session.shipping_details || {};
+  const a = sd.address || {};
+  const cfg = shippingConfig();
+  const address = pickup
+    ? { name: buyer, line1: `STORE PICKUP — ${cfg.pickupName}`, line2: "", city: "", state: "", zip: "", pickup: true, order: session.id }
+    : { name: sd.name || buyer, line1: a.line1 || "", line2: a.line2 || "", city: a.city || "", state: a.state || "", zip: a.postal_code || "", order: session.id };
+  const { error } = await db.rpc("request_shipment", { p_user: m.user_id, p_cards: cards, p_address: address, p_fee: 0 });
+  if (error) console.error(`VAULT CARDS NOT QUEUED for order ${session.id}:`, error.message);
 }

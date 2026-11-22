@@ -48,8 +48,6 @@ and logins, the same project BB Inventory already uses), **Vercel** (hosting), a
    | `ADMIN_EMAILS` | your email (comma-separate several) |
    | `SHOP_ADDRESS` | where players mail cards they sell you, lines split with `|` (e.g. `Bearded Bear TCG \| 123 Main St \| City, ST 00000`) |
    | `CRON_SECRET` | any long random string (protects the daily TCGplayer price sync) |
-   | `VAULT_SHIP_FEE_CENTS` | `500` (= $5 to ship vault cards) |
-   | `SHIPPING_FLAT_CENTS` | `500` (store orders) |
    | `FREE_SHIPPING_MIN` | `75` |
    | `LOCAL_PICKUP` | `true` |
    | `CONTACT_EMAIL` | the shop's email |
@@ -198,6 +196,10 @@ Built in, no setup needed:
 - Everything else ships **tracked, $5**. **Free tracked shipping at $75+.**
 - **Store pickup at Toyland Marketplace, Booth 11** (2401 S Vineyard Ave, Unit B, Ontario, CA 91761) is always offered, free, with no minimum. Pickup sales show in
   BB Inventory's sales as "Website pickup (buyer name)", so set those aside instead of mailing them.
+- Signed-in pack players see **"Ship my N vault cards in this package"** in the cart. Ticked, their vault
+  cards go in the same box as the order for no extra shipping, and show in Packs admin → Shipping marked
+  "Pack with website order" (or "Pickup with website order").
+- The old `VAULT_SHIP_FEE_CENTS` and `SHIPPING_FLAT_CENTS` settings are no longer used.
 - The cart tells shoppers up front, e.g. "Add $1.40 more to ship, or pick it up free at Toyland Marketplace".
 
 To change a number, add the setting in Vercel (Settings → Environment Variables) and redeploy:
@@ -208,7 +210,9 @@ To change a number, add the setting in Vercel (Settings → Environment Variable
 | `BULK_MIN_ORDER` | `5` | Minimum dollars for a bulk-only order to ship |
 | `ENVELOPE_SHIPPING_CENTS` | `199` | Envelope price, in cents |
 | `ENVELOPE_MAX_CARDS` | `20` | Most cards in one envelope order |
-| `SHIPPING_FLAT_CENTS` | `500` | Tracked shipping, in cents |
+| `SHIPPING_TRACKED` | `6.99` | Tracked mailer (singles, packs), in dollars |
+| `SHIPPING_BOX` | `12.99` | Tracked box, used when the order has a booster box / big sealed item |
+| `SHIPPING_VAULT` | `6.99` | Shipping vault cards on their own (taken from the player's balance) |
 | `FREE_SHIPPING_MIN` | `75` | Free tracked shipping at this many dollars |
 | `PICKUP_LOCATION` | `Toyland Marketplace, Booth 11, Ontario` | Pickup name shown at checkout |
 | `PICKUP_ADDRESS` | `2401 S Vineyard Ave, Unit B, Ontario, CA 91761` | Pickup address shown in the cart and at checkout |

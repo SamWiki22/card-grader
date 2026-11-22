@@ -642,7 +642,10 @@ function Shipment({ s, onShip }) {
         <b>#{s.id}</b> · {new Date(s.created_at).toLocaleString()}
         <ul>{s.cards.map((n, i) => <li key={i}>{n}</li>)}</ul>
       </div>
-      <address>{a.name}<br />{a.line1}{a.line2 ? <>, {a.line2}</> : null}<br />{a.city}, {a.state} {a.zip}</address>
+      <address>
+        {a.order && <><b>{a.pickup ? "Pickup with website order" : "Pack with website order"}</b><br /></>}
+        {a.name}<br />{a.line1}{a.line2 ? <>, {a.line2}</> : null}{a.pickup ? null : <><br />{a.city}, {a.state} {a.zip}</>}
+      </address>
       <div className="ship-do">
         <input className="input input-sm" placeholder="Tracking #" value={tracking} onChange={e => setTracking(e.target.value)} />
         <button className="btn btn-small" onClick={() => onShip(tracking)}>Mark shipped</button>
