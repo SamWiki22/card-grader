@@ -332,16 +332,20 @@ function AddPanel({ onClose, onAdded }) {
         <button type="button" className="link-button" onClick={onClose}>Close</button>
       </div>
       <div className="add-panel-top">
-        <label className="btn snap-btn">{reading ? "Reading photo…" : "📷 Snap to add"}<input type="file" accept="image/*" onChange={onSnap} hidden disabled={reading} /></label>
+        <label className="btn snap-btn">{reading ? "Reading photo…" : "📷 Snap to add"}<input type="file" accept="image/*" capture="environment" onChange={onSnap} hidden disabled={reading} /></label>
+        <label className="btn btn-ghost-dark">🖼 From photos<input type="file" accept="image/*" onChange={onSnap} hidden disabled={reading} /></label>
         <button type="button" className="btn btn-ghost-dark" onClick={() => setPicker(true)}>🔎 Find on TCGplayer</button>
         <span className="muted small">{f.tcg ? `Matched TCGplayer #${f.tcg.productId} · ${f.tcg.subType}` : hint.q ? "Read from your photo — tap Find on TCGplayer to match the price, or check the details and add." : "Snap a photo, search TCGplayer, or type it in below."}</span>
       </div>
       {found.length > 1 && <p className="small">This photo has {found.length} items — adding <b>{found[0].name}</b> first, then the rest one by one.</p>}
       <div className="add-grid">
-        <label className={`add-photo${f.photo ? " has" : ""}`}>
-          {f.photo ? <img src={f.photo} alt="" /> : <span>📷 Photo<br /><small>optional</small></span>}
-          <input type="file" accept="image/*" onChange={onPhoto} hidden />
-        </label>
+        <div className="add-photo-wrap">
+          <label className={`add-photo${f.photo ? " has" : ""}`}>
+            {f.photo ? <img src={f.photo} alt="" /> : <span>📷 Photo<br /><small>optional</small></span>}
+            <input type="file" accept="image/*" capture="environment" onChange={onPhoto} hidden />
+          </label>
+          <label className="photo-lib small">🖼 From photos<input type="file" accept="image/*" onChange={onPhoto} hidden /></label>
+        </div>
         <div className="add-fields">
           <input className="input" placeholder="Name" required {...bind("name")} />
           <input className="input" placeholder="Set" {...bind("set_name")} />
@@ -419,7 +423,10 @@ function ItemCard({ it, selected, onToggle, busy, onRotate, act, onView }) {
     <article className={`inv-card${selected ? " picked" : ""}${listed ? "" : " hidden-item"}`}>
       <div className="inv-photo">
         {noPhoto
-          ? <label className="inv-addphoto">{uploading ? "Saving…" : <><span className="inv-addphoto-icon">📷</span>Add photo</>}<input type="file" accept="image/*" onChange={onPhoto} hidden disabled={uploading} /></label>
+          ? <div className="inv-addphoto">{uploading ? "Saving…" : <>
+              <label className="inv-addphoto-btn"><span className="inv-addphoto-icon">📷</span>Camera<input type="file" accept="image/*" capture="environment" onChange={onPhoto} hidden disabled={uploading} /></label>
+              <label className="inv-addphoto-btn"><span className="inv-addphoto-icon">🖼</span>Photos<input type="file" accept="image/*" onChange={onPhoto} hidden disabled={uploading} /></label>
+            </>}</div>
           : <img src={photoUrl(it)} alt="" loading="lazy" onError={() => setNoPhoto(true)} onClick={onView} className="inv-photo-tap" title="Tap to enlarge" />}
         <label className="inv-select"><input type="checkbox" checked={selected} onChange={onToggle} /></label>
         {!noPhoto && (

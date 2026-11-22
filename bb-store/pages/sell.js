@@ -196,9 +196,12 @@ function SubmitForm({ onCancel, onDone }) {
 
 function PhotoBox({ label, value, onChange, required }) {
   return (
-    <label className={`photo-box${value ? " has" : ""}`}>
-      {value ? <img src={value} alt="" /> : <span>{label}{required ? " *" : ""}<br /><small>Tap to add</small></span>}
-      <input type="file" accept="image/*" onChange={onChange} hidden />
-    </label>
+    <span className="photo-box-wrap">
+      <label className={`photo-box${value ? " has" : ""}`}>
+        {value ? <img src={value} alt="" /> : <span>{label}{required ? " *" : ""}<br /><small>Tap for camera</small></span>}
+        <input type="file" accept="image/*" capture="environment" onChange={onChange} hidden />
+      </label>
+      <label className="photo-lib small">🖼 From photos<input type="file" accept="image/*" onChange={onChange} hidden /></label>
+    </span>
   );
 }
