@@ -5,6 +5,7 @@ import SignIn from "../../components/SignIn";
 import { AdminGate } from "../../components/TeamLogin";
 import TcgPicker from "../../components/TcgPicker";
 import { useMe, postJSON, accessOf } from "../../lib/me";
+import FillNumbers from "../../components/FillNumbers";
 import { GAMES, GAME_LABEL, money } from "../../lib/shared";
 
 const TYPES = { single: "Single", box: "Box", pack: "Pack" };
@@ -175,6 +176,7 @@ export default function Inventory() {
           <div className="inv-top-actions">
             <button className="btn" onClick={() => { setAdding(true); setMsg(""); }}>+ Add cards or sealed</button>
             <button className="btn btn-ghost-dark" onClick={() => { setRecording(true); setMsg(""); }}>📷 Record sales</button>
+            <FillNumbers where="store" onDone={async m => { await load(); setMsg(m); }} />
           </div>
         )}
 

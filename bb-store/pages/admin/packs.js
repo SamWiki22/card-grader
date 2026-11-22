@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import FillNumbers from "../../components/FillNumbers";
 import Layout from "../../components/Layout";
 import SignIn from "../../components/SignIn";
 import { AdminGate } from "../../components/TeamLogin";
@@ -107,6 +108,7 @@ export default function AdminPacks() {
           </button>
         </div>
         {msg && <p className={msg.startsWith("Error") ? "error" : "banner light"}>{msg}</p>}
+        <FillNumbers where="pools" onDone={async m => { await load(); setMsg(m); }} />
 
         <GiveCredit act={act} />
 
