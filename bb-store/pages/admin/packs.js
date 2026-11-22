@@ -9,7 +9,7 @@ import PhotoPass from "../../components/PhotoPass";
 import PackPreview from "../../components/PackPreview";
 import { useMe, postJSON } from "../../lib/me";
 import { shrink, cardPhotoUrl } from "../../lib/photo";
-import { GAME_LABEL, GAME_SHORT, COMP_SOURCES, centsToMoney, money } from "../../lib/shared";
+import { GAMES, GAME_LABEL, GAME_SHORT, COMP_SOURCES, centsToMoney, money } from "../../lib/shared";
 import { balanceWeights, expectedValue, oddsFor, DEFAULT_TARGET_MARGIN } from "../../lib/odds";
 
 const pct = n => `${(n * 100).toFixed(1)}%`;
@@ -164,13 +164,14 @@ export default function AdminPacks() {
           </>
         )}
 
-        <h2 className="sub-title">Store singles · TCGplayer pricing</h2>
-        <p className="muted small">Singles from BB Inventory. Link one to TCGplayer and tick “sync” to have its store price follow the TCGplayer market price every day.</p>
+        <h2 className="sub-title">Store singles → packs · TCGplayer pricing</h2>
+        <p className="muted small">Every single in your inventory. Tap <b>→ Pack</b> to move copies into a pack pool (they come out of store stock). Link one to TCGplayer and tick “sync” to have its price follow the market daily.</p>
+        <SinglesFilter items={data.items} game={tier?.game} render={list => (
         <div className="table-wrap">
           <table className="table">
             <thead><tr><th>Card</th><th>Cond.</th><th>Qty</th><th>Store price</th><th>TCGplayer</th><th>Last sold</th><th /></tr></thead>
             <tbody>
-              {data.items.map(i => (
+              {list.map(i => (
                 <tr key={i.id}>
                   <td>{i.name}<div className="muted small">{i.set_name}</div></td>
                   <td>{i.condition}</td>
@@ -179,16 +180,17 @@ export default function AdminPacks() {
                   <td><TcgStatus row={i} /></td>
                   <td><CompCell row={i} onEdit={() => setComp({ target: "item", row: i })} /></td>
                   <td className="nowrap">
-                    <MoveToPool item={i} tiers={data.tiers} act={act} />{" "}
+                    <MoveToPool item={i} tiers={data.tiers} current={tierId} act={act} />{" "}
                     <button className="btn btn-small btn-ghost-dark" onClick={() => pick(i.game || "pokemon", t => act({ action: "link-tcg", target: "item", id: i.id, tcg: t }, `${i.name} linked${t.autoPrice ? " — store price now follows TCGplayer" : ""}.`))}>{i.tcg_product_id ? "Relink" : "Link"}</button>{" "}
                     {i.tcg_product_id && <button className="link-button" onClick={() => act({ action: "unlink-tcg", target: "item", id: i.id }, "Link removed.")}>Unlink</button>}
                   </td>
                 </tr>
               ))}
-              {!data.items.length && <tr><td colSpan={7} className="muted">No singles in inventory yet.</td></tr>}
+              {!list.length && <tr><td colSpan={7} className="muted">{data.items.length ? "No singles match." : "No singles in inventory yet."}</td></tr>}
             </tbody>
           </table>
         </div>
+        )} />
 
         <h2 className="sub-title">Shipping requests ({openShipments.length})</h2>
         {!openShipments.length ? <p className="muted">Nothing to ship.</p> : openShipments.map(s => (
@@ -793,11 +795,11 @@ function GiveCredit({ act }) {
 }
 
 // → Pack: move copies of a store single into a pool (photo, name, value carried over).
-function MoveToPool({ item, tiers, act }) {
+function MoveToPool({ item, tiers, current, act }) {
   const [open, setOpen] = useState(false);
   const own = tiers.filter(t => t.game === (item.game || "other"));
   const list = own.length ? own : tiers;
-  const [tier, setTier] = useState(list[0]?.id || "");
+  const [tier, setTier] = useState(list.some(t => t.id === current) ? current : list[0]?.id || "");
   const [qty, setQty] = useState(1);
   const [value, setValue] = useState(Number(item.price).toFixed(2));
   if (!open) return <button className="btn btn-small" disabled={item.quantity <= 0} onClick={() => setOpen(true)}>→ Pack</button>;
@@ -932,5 +934,36 @@ function PoolSearch({ cards, tiers, onOpen }) {
         </ul>
       )}
     </div>
+  );
+}
+
+// Search + filters for the store-singles table (it can hold thousands of cards).
+function SinglesFilter({ items, game, render }) {
+  const [q, setQ] = useState("");
+  const [g, setG] = useState(game || "");
+  const [stock, setStock] = useState("in");
+  const [limit, setLimit] = useState(50);
+  useEffect(() => { setG(game || ""); setLimit(50); }, [game]);
+  const norm = s => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  const terms = norm(q).split(/\s+/).filter(Boolean);
+  const list = items.filter(i =>
+    (!g || (i.game || "other") === g) &&
+    (stock === "all" || i.quantity > 0) &&
+    terms.every(t => norm(`${i.name} ${i.set_name}`).includes(t)));
+  return (
+    <>
+      <div className="singles-filter">
+        <input className="input input-sm" type="search" placeholder="Search name or set…" value={q} onChange={e => { setQ(e.target.value); setLimit(50); }} aria-label="Search singles" />
+        <select className="input input-sm" value={g} onChange={e => { setG(e.target.value); setLimit(50); }} aria-label="Game">
+          <option value="">All games</option>{GAMES.map(x => <option key={x.id} value={x.id}>{x.label}</option>)}
+        </select>
+        <select className="input input-sm" value={stock} onChange={e => setStock(e.target.value)} aria-label="Stock">
+          <option value="in">In stock</option><option value="all">Include sold out</option>
+        </select>
+        <span className="muted small">{list.length.toLocaleString()} of {items.length.toLocaleString()}</span>
+      </div>
+      {render(list.slice(0, limit))}
+      {list.length > limit && <button className="btn btn-small btn-ghost-dark" onClick={() => setLimit(l => l + 100)}>Show more ({(list.length - limit).toLocaleString()} left)</button>}
+    </>
   );
 }

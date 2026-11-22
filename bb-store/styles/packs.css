@@ -443,3 +443,5 @@
 .viewer-form .viewer-cond { flex: 0 0 90px; }
 .viewer-actions { display: flex; gap: 8px; justify-content: flex-end; }
 .viewer-actions .btn:last-child { flex: 1 1 auto; }
+.singles-filter { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
+.singles-filter input[type=search] { flex: 1 1 200px; }
