@@ -423,10 +423,10 @@ function ItemCard({ it, selected, onToggle, busy, onRotate, act, onView }) {
     <article className={`inv-card${selected ? " picked" : ""}${listed ? "" : " hidden-item"}`}>
       <div className="inv-photo">
         {noPhoto
-          ? <div className="inv-addphoto">{uploading ? "Saving…" : <>
-              <label className="inv-addphoto-btn"><span className="inv-addphoto-icon">📷</span>Camera<input type="file" accept="image/*" capture="environment" onChange={onPhoto} hidden disabled={uploading} /></label>
-              <label className="inv-addphoto-btn"><span className="inv-addphoto-icon">🖼</span>Photos<input type="file" accept="image/*" onChange={onPhoto} hidden disabled={uploading} /></label>
-            </>}</div>
+          ? <>
+              <label className="inv-addphoto">{uploading ? "Saving…" : <><span className="inv-addphoto-icon">📷</span>Add photo</>}<input type="file" accept="image/*" capture="environment" onChange={onPhoto} hidden disabled={uploading} /></label>
+              {!uploading && <label className="inv-fromphotos">🖼 Gallery<input type="file" accept="image/*" onChange={onPhoto} hidden /></label>}
+            </>
           : <img src={photoUrl(it)} alt="" loading="lazy" onError={() => setNoPhoto(true)} onClick={onView} className="inv-photo-tap" title="Tap to enlarge" />}
         <label className="inv-select"><input type="checkbox" checked={selected} onChange={onToggle} /></label>
         {!noPhoto && (

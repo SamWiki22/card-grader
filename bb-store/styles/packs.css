@@ -449,5 +449,4 @@
 
 .add-photo-wrap, .photo-box-wrap { display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
 .photo-lib { cursor: pointer; text-align: center; color: var(--teal-hi, var(--teal)); font-weight: 700; padding: 4px 0; }
-.inv-addphoto { flex-direction: row !important; gap: 8px !important; padding: 6px; cursor: default; }
-.inv-addphoto-btn { flex: 1 1 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; height: 100%; border-radius: 8px; cursor: pointer; background: rgba(79,195,182,.08); }
+.inv-fromphotos { position: absolute; left: 50%; bottom: 52px; transform: translateX(-50%); z-index: 2; white-space: nowrap; cursor: pointer; font-size: 11px; font-weight: 700; color: var(--teal-hi, var(--teal)); padding: 4px 8px; max-width: calc(100% - 20px); overflow: hidden; text-overflow: ellipsis; border-radius: 999px; border: 1px solid rgba(79,195,182,.45); background: rgba(7,11,22,.85); }
