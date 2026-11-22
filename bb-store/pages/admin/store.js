@@ -88,7 +88,7 @@ export default function Inventory() {
   const [adding, setAdding] = useState(false);
   const [recording, setRecording] = useState(false);
 
-  // Standard bulk prices (C $0.29 · UC $0.59 · R $1 · foil R $2): preview, confirm, save.
+  // Standard bulk prices (C $0.29 · UC $0.59 · R $1; foil C $0.59 · UC $1.19 · R and others $2): preview, confirm, save.
   async function bulkPrices() {
     setMsg("");
     try {
@@ -96,7 +96,7 @@ export default function Inventory() {
       const missing = r.noRarity ? ` (${r.noRarity} in-stock singles have no rarity yet — use “# Fill in numbers & rarity” first.)` : "";
       if (!r.count) return setMsg(`Every card with a rarity is already at or above the standard bulk price.${missing}`);
       const eg = r.sample.slice(0, 4).map(x => `${x.name} (${x.rarity}${x.foil ? " foil" : ""}) ${money(x.from)} → ${money(x.to)}`).join("\n");
-      if (!confirm(`Raise ${r.count} card${r.count === 1 ? "" : "s"} to the standard bulk price?\n\nC $0.29 · UC $0.59 · R $1 · Foil R $2\n\ne.g.\n${eg}`)) return;
+      if (!confirm(`Raise ${r.count} card${r.count === 1 ? "" : "s"} to the standard bulk price?\n\nC $0.29 · UC $0.59 · R $1\nFoil: C $0.59 · UC $1.19 · R and others $2\n\ne.g.\n${eg}`)) return;
       const s = await postJSON("/api/admin/items", { action: "bulk-prices", apply: true });
       await load();
       setMsg(`Raised ${s.saved} card${s.saved === 1 ? "" : "s"} to the standard bulk price.${missing}`);
