@@ -4,7 +4,7 @@ import Anthropic from "@anthropic-ai/sdk";
 
 export const aiReady = () => !!process.env.ANTHROPIC_API_KEY;
 
-const GAMES = ["pokemon", "mtg", "dbs", "onepiece", "gundam", "unionarena", "other"];
+const GAMES = ["pokemon", "mtg", "dbs", "onepiece", "gundam", "unionarena", "riftbound", "other"];
 const str = { type: "string" };
 
 // Every field is required (structured outputs); the model uses "" when it can't tell.

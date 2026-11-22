@@ -10,7 +10,7 @@ export const config = {
   },
 };
 
-const GAME_IDS = ["pokemon", "mtg", "onepiece", "dbs", "gundam", "unionarena", "other"];
+const GAME_IDS = ["pokemon", "mtg", "onepiece", "dbs", "gundam", "unionarena", "riftbound", "other"];
 const CONDITIONS = ["NM", "LP", "MP", "HP", "DMG"];
 
 export default async function handler(req, res) {
@@ -27,7 +27,7 @@ export default async function handler(req, res) {
 
 Identify:
 - "type": "box" (sealed booster box, ETB, tin, starter deck, bundle, etc.), "pack" (a single loose booster pack), or "single" (an individual trading card).
-- "game": one of ${JSON.stringify(GAME_IDS)} — "pokemon", "mtg" (Magic: The Gathering), "onepiece" (One Piece), "dbs" (Dragon Ball), "gundam", "unionarena" (Union Arena), or "other" if it's a different game or you can't tell.
+- "game": one of ${JSON.stringify(GAME_IDS)} — "pokemon", "mtg" (Magic: The Gathering), "onepiece" (One Piece), "dbs" (Dragon Ball), "gundam", "unionarena" (Union Arena), "riftbound" (Riftbound, the League of Legends card game), or "other" if it's a different game or you can't tell.
 - "name": the product or card name. For a single card, include the character/card name, rarity marker (e.g. SR, R, holo, foil — use "*" for alternate-art/parallel prints if visible), and the card number/set code if visible on the card, e.g. "Charizard SR* SB02-058". For a box/pack, the product name, e.g. "Scarlet & Violet Booster Box".
 - "set": the set or expansion name, as printed or as you can best identify it.
 - "condition": ONLY for type "single" — your best visual guess at physical condition from the photo: "NM" (near mint, no visible wear), "LP" (light play, minor edge/corner wear), "MP" (moderate play), "HP" (heavy play), or "DMG" (damaged/creased/torn). Leave "" if you can't judge from the photo. Leave "" entirely for type "box" or "pack" (sealed product doesn't need a condition grade).

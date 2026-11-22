@@ -341,7 +341,7 @@ function AddPanel({ onClose, onAdded }) {
   );
 }
 // TCGplayer category → store game.
-const TCG_GAME = { 3: "pokemon", 1: "mtg", 80: "dbs", 27: "dbs", 68: "onepiece", 86: "gundam", 81: "unionarena" };
+const TCG_GAME = { 3: "pokemon", 1: "mtg", 80: "dbs", 27: "dbs", 68: "onepiece", 86: "gundam", 81: "unionarena", 89: "riftbound" };
 
 function ItemCard({ it, selected, onToggle, busy, onRotate, act }) {
   const pick = x => ({ name: x.name, set_name: x.set_name, condition: x.condition, quantity: x.quantity, price: x.price, cost: x.cost, owner: x.owner || "", game: x.game || "other" });

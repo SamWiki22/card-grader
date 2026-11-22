@@ -15,7 +15,7 @@ import { balanceWeights, expectedValue, oddsFor, DEFAULT_TARGET_MARGIN } from ".
 const pct = n => `${(n * 100).toFixed(1)}%`;
 const LAST_POOL = "bb-admin-pool";
 // TCGplayer category → game, to warn when a card is being added to another game's pool.
-const TCG_GAME = { 3: "pokemon", 1: "mtg", 80: "dbs", 27: "dbs", 68: "onepiece", 86: "gundam", 81: "unionarena" };
+const TCG_GAME = { 3: "pokemon", 1: "mtg", 80: "dbs", 27: "dbs", 68: "onepiece", 86: "gundam", 81: "unionarena", 89: "riftbound" };
 const STATUS = { available: "In pool", held: "In a vault", ship_requested: "To ship", shipped: "Shipped", retired: "Pulled from pool" };
 
 // Resize a photo to max 900px JPEG before upload so pack pools stay light.

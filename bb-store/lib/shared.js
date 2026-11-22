@@ -6,11 +6,12 @@ export const GAMES = [
   { id: "onepiece", label: "One Piece", short: "One Piece" },
   { id: "gundam", label: "Gundam", short: "Gundam" },
   { id: "unionarena", label: "Union Arena", short: "Union Arena" },
+  { id: "riftbound", label: "Riftbound", short: "Riftbound" },
   { id: "other", label: "Other", short: "Other" },
 ];
 export const GAME_SHORT = Object.fromEntries(GAMES.map(g => [g.id, g.short]));
 // Accent color per game in the Packs app.
-export const GAME_COLOR = { pokemon: "#e0b04a", mtg: "#b5773f", dbs: "#e8743a", onepiece: "#e0605a", gundam: "#5aa0e0", unionarena: "#4fc3b6", other: "#9aa3b8" };
+export const GAME_COLOR = { pokemon: "#e0b04a", mtg: "#b5773f", dbs: "#e8743a", onepiece: "#e0605a", gundam: "#5aa0e0", unionarena: "#4fc3b6", riftbound: "#b07ae0", other: "#9aa3b8" };
 export const GAME_LABEL = Object.fromEntries(GAMES.map(g => [g.id, g.label]));
 
 // Shop categories → inventory "type" values.
@@ -55,6 +56,7 @@ export const TCG_SOURCES = [
   { id: "onepiece", game: "onepiece", categoryId: 68, label: "One Piece" },
   { id: "gundam", game: "gundam", categoryId: 86, label: "Gundam" },
   { id: "unionarena", game: "unionarena", categoryId: 81, label: "Union Arena" },
+  { id: "riftbound", game: "riftbound", categoryId: 89, label: "Riftbound" },
 ];
 
 // Condition / grade suggestions for card submissions.
