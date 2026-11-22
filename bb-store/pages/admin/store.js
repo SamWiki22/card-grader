@@ -6,6 +6,7 @@ import { AdminGate } from "../../components/TeamLogin";
 import TcgPicker from "../../components/TcgPicker";
 import { useMe, postJSON, accessOf } from "../../lib/me";
 import FillNumbers from "../../components/FillNumbers";
+import CombineDuplicates from "../../components/CombineDuplicates";
 import { GAMES, GAME_LABEL, money, bulkFloorCents, RARITY_SUGGESTIONS } from "../../lib/shared";
 
 const TYPES = { single: "Single", box: "Box", pack: "Pack" };
@@ -193,6 +194,7 @@ export default function Inventory() {
             <button className="btn btn-ghost-dark" onClick={() => { setRecording(true); setMsg(""); }}>📷 Record sales</button>
             <FillNumbers where="store" onDone={async m => { await load(); setMsg(m); }} />
             <button className="btn btn-ghost-dark" onClick={bulkPrices}>💲 Bulk prices</button>
+            <CombineDuplicates onDone={async m => { await load(); setMsg(m); }} />
           </div>
         )}
 
