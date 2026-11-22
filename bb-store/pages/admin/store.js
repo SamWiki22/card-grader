@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Layout from "../../components/Layout";
 import SignIn from "../../components/SignIn";
 import { AdminGate } from "../../components/TeamLogin";
@@ -82,6 +82,7 @@ export default function Inventory() {
   const [owner, setOwner] = useState("");
   const [stock, setStock] = useState("in");
   const [selected, setSelected] = useState([]);
+  const [viewing, setViewing] = useState(null); // item id open in the big photo viewer
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState("");
   const [adding, setAdding] = useState(false);
@@ -219,9 +220,14 @@ export default function Inventory() {
         </div>
 
         <div className="inv-grid">
-          {shown.map(it => <ItemCard key={`${it.id}-${it.updated_at}`} it={it} selected={selected.includes(it.id)} onToggle={() => toggle(it.id)} busy={busy === it.id} onRotate={dir => rotate(it, dir)} act={act} />)}
+          {shown.map(it => <ItemCard key={`${it.id}-${it.updated_at}`} it={it} selected={selected.includes(it.id)} onToggle={() => toggle(it.id)} busy={busy === it.id} onRotate={dir => rotate(it, dir)} act={act} onView={() => setViewing(it.id)} />)}
         </div>
         {!shown.length && <p className="muted">No items match.</p>}
+        {viewing && shown.some(x => x.id === viewing) && (
+          <PhotoViewer items={shown} id={viewing} onGo={setViewing} onClose={() => setViewing(null)}
+            onSave={(it, fields) => postJSON("/api/admin/items", { action: "update", id: it.id, fields })}
+            onClosed={load} />
+        )}
       </section>
     </Layout>
   );
@@ -377,7 +383,7 @@ function RarityInput({ f, setF, small }) {
 // TCGplayer category → store game.
 const TCG_GAME = { 3: "pokemon", 1: "mtg", 80: "dbs", 27: "dbs", 68: "onepiece", 86: "gundam", 81: "unionarena", 89: "riftbound" };
 
-function ItemCard({ it, selected, onToggle, busy, onRotate, act }) {
+function ItemCard({ it, selected, onToggle, busy, onRotate, act, onView }) {
   const pick = x => ({ name: x.name, set_name: x.set_name, condition: x.condition, quantity: x.quantity, price: x.price, cost: x.cost, owner: x.owner || "", game: x.game || "other", ...(x.rarity !== undefined ? { rarity: x.rarity || "", foil: !!x.foil } : {}) });
   const [f, setF] = useState(pick(it));
   const [noPhoto, setNoPhoto] = useState(false);
@@ -401,7 +407,7 @@ function ItemCard({ it, selected, onToggle, busy, onRotate, act }) {
       <div className="inv-photo">
         {noPhoto
           ? <label className="inv-addphoto">{uploading ? "Saving…" : <><span className="inv-addphoto-icon">📷</span>Add photo</>}<input type="file" accept="image/*" onChange={onPhoto} hidden disabled={uploading} /></label>
-          : <img src={photoUrl(it)} alt="" loading="lazy" onError={() => setNoPhoto(true)} />}
+          : <img src={photoUrl(it)} alt="" loading="lazy" onError={() => setNoPhoto(true)} onClick={onView} className="inv-photo-tap" title="Tap to enlarge" />}
         <label className="inv-select"><input type="checkbox" checked={selected} onChange={onToggle} /></label>
         {!noPhoto && (
           <div className="inv-rotate">
@@ -543,6 +549,92 @@ function RecordSales({ items, onClose, onDone }) {
         </>
       )}
       {error && <p className="error">{error}</p>}
+    </div>
+  );
+}
+
+// Tap a card photo: big photo (tap to zoom, drag to move), quick fixes underneath,
+// and Save & next to work through the list. Changes are saved per card; the
+// inventory list refreshes when you close.
+function PhotoViewer({ items, id, onGo, onClose, onSave, onClosed }) {
+  const i = items.findIndex(x => x.id === id);
+  const it = items[i];
+  const pickF = x => ({ name: x.name || "", set_name: x.set_name || "", condition: x.condition || "", rarity: x.rarity || "", foil: !!x.foil });
+  const [f, setF] = useState(() => pickF(it));
+  const [saved, setSaved] = useState({}); // id -> fields saved in this viewer
+  const [zoom, setZoom] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+  const cur = { ...pickF(it), ...(saved[it.id] || {}) };
+  useEffect(() => { setF(cur); setZoom(false); setMsg(""); }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const k = e => { if (e.key === "Escape") close(); };
+    document.addEventListener("keydown", k);
+    document.body.style.overflow = "hidden";
+    return () => { document.removeEventListener("keydown", k); document.body.style.overflow = ""; };
+  }); // eslint-disable-line react-hooks/exhaustive-deps
+  const dirty = Object.keys(f).some(k => String(f[k]) !== String(cur[k]));
+  const hasRarity = it.rarity !== undefined;
+  const go = d => { const n = items[i + d]; if (n) onGo(n.id); };
+  function close() { onClose(); if (Object.keys(saved).length) onClosed(); }
+  async function save(next) {
+    if (dirty) {
+      setBusy(true); setMsg("");
+      try {
+        const fields = { name: f.name, set_name: f.set_name, condition: f.condition, ...(hasRarity ? { rarity: f.rarity, foil: f.foil } : {}) };
+        await onSave(it, fields);
+        setSaved(s => ({ ...s, [it.id]: fields }));
+      } catch (e) { setMsg(`Error: ${e.message}`); setBusy(false); return; }
+      setBusy(false);
+    }
+    if (next) { if (items[i + 1]) go(1); else setMsg("✓ Saved. That was the last card in this list."); }
+    else if (dirty) setMsg("✓ Saved.");
+  }
+  const bind = k => ({ value: f[k], onChange: e => setF({ ...f, [k]: e.target.value }) });
+  // Zoom in on the spot you tapped.
+  const box = useRef(null);
+  const spot = useRef(null);
+  function tapZoom(e) {
+    if (zoom) return setZoom(false);
+    const img = e.currentTarget.querySelector("img").getBoundingClientRect();
+    spot.current = { x: Math.min(1, Math.max(0, (e.clientX - img.left) / img.width)), y: Math.min(1, Math.max(0, (e.clientY - img.top) / img.height)) };
+    setZoom(true);
+  }
+  useEffect(() => {
+    const el = box.current;
+    if (!zoom || !el || !spot.current) return;
+    el.scrollLeft = spot.current.x * el.scrollWidth - el.clientWidth / 2;
+    el.scrollTop = spot.current.y * el.scrollHeight - el.clientHeight / 2;
+  }, [zoom]);
+
+  return (
+    <div className="viewer" role="dialog" aria-label={it.name}>
+      <div className="viewer-top">
+        <button className="btn btn-small btn-ghost-dark" onClick={close}>✕ Close</button>
+        <span className="small muted">{i + 1} of {items.length}</span>
+        <span className="viewer-nav">
+          <button className="btn btn-small btn-ghost-dark" disabled={i <= 0} onClick={() => go(-1)} aria-label="Previous">←</button>
+          <button className="btn btn-small btn-ghost-dark" disabled={i >= items.length - 1} onClick={() => go(1)} aria-label="Next">→</button>
+        </span>
+      </div>
+      <div ref={box} className={`viewer-photo${zoom ? " zoomed" : ""}`} onClick={tapZoom}>
+        <img src={photoUrl(it)} alt={it.name} />
+      </div>
+      <p className="viewer-hint muted small">{zoom ? "Drag to look around · tap to zoom out" : "Tap the photo to zoom in"}</p>
+      <div className="viewer-form">
+        <input className="input input-sm" {...bind("name")} aria-label="Name" placeholder="Name" />
+        <div className="inv-row">
+          <input className="input input-sm" {...bind("set_name")} aria-label="Set" placeholder="Set" />
+          <input className="input input-sm viewer-cond" {...bind("condition")} aria-label="Condition" placeholder="Cond." />
+        </div>
+        {hasRarity && it.type === "single" && <RarityInput f={f} setF={setF} small />}
+        <div className="viewer-actions">
+          <button className="btn btn-small btn-ghost-dark" disabled={!dirty || busy} onClick={() => save(false)}>Save</button>
+          <button className="btn" disabled={busy} onClick={() => save(true)}>{busy ? "Saving…" : dirty ? "Save & next →" : "Next →"}</button>
+        </div>
+        {msg && <p className={msg.startsWith("Error") ? "error small" : "add-ok small"}>{msg}</p>}
+        <p className="muted small">{money(Number(it.price))} · qty {it.quantity}{saved[it.id] ? " · saved ✓" : ""}</p>
+      </div>
     </div>
   );
 }
