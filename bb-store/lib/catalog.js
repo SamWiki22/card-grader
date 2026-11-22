@@ -24,6 +24,7 @@ export async function selectAll(build, pageSize = 1000) {
 const GAME_KEYWORDS = {
   pokemon: ["pokemon", "pokémon"], mtg: ["magic", "mtg"], onepiece: ["one piece"],
   dbs: ["dragon ball", "dragonball"], gundam: ["gundam"], unionarena: ["union arena"],
+  riftbound: ["riftbound", "league of legends"],
 };
 
 // Public columns only: cost, owner, notes, sku and low_stock never leave the server.

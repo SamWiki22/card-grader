@@ -21,6 +21,7 @@ const GAMES = [
   { id: "dbs", label: "Dragon Ball", icon: "🐉", keywords: ["dragon ball", "dragonball"] },
   { id: "gundam", label: "Gundam", icon: "🤖", keywords: ["gundam"] },
   { id: "unionarena", label: "Union Arena", icon: "🎫", keywords: ["union arena"] },
+  { id: "riftbound", label: "Riftbound", icon: "🌀", keywords: ["riftbound", "league of legends"] },
   { id: "other", label: "Other", icon: "🎴", keywords: [] },
 ];
 const GAME_MAP = Object.fromEntries(GAMES.map(g => [g.id, g]));
