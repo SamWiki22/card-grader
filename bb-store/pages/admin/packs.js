@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Layout from "../../components/Layout";
 import SignIn from "../../components/SignIn";
 import { AdminGate } from "../../components/TeamLogin";
@@ -345,19 +345,38 @@ function AddCard({ tier, tiers, onPool, pick, onAdd }) {
       game: TCG_GAME[t.categoryId] || cur.game,
     }));
   }
+  // Checks are done here (not by the browser), so a problem always shows as a
+  // message under the Add button instead of a bubble that's easy to miss on a phone.
+  const num = v => { const n = Number(String(v ?? "").replace(/[$,\s]/g, "")); return String(v ?? "").trim() === "" || !Number.isFinite(n) ? null : n; };
   async function submit(e) {
     e.preventDefault();
+    const name = f.name.trim();
+    const value = num(f.value), weight = f.weight === "" ? 1 : num(f.weight), bb = f.buyback_percent === "" ? "" : num(f.buyback_percent);
+    const problems = [];
+    if (!name) problems.push("enter the card name");
+    if (value == null || value < 0) problems.push("enter the card’s value in dollars (e.g. 45 or 12.50)");
+    if (weight == null || weight <= 0) problems.push("weight must be more than 0 (1 = normal)");
+    if (bb !== "" && (bb == null || bb < 0 || bb > 100)) problems.push("buyback % must be 0–100, or leave it blank");
+    if (problems.length) { setResult({ ok: false, text: `Not added yet: ${problems.join("; ")}.` }); return; }
+
     setBusy(true); setResult(null);
-    const name = f.name;
-    const r = await onAdd(f);
-    if (r?.ok) {
-      setResult({ ok: true, text: `✓ Added ${name} to ${GAME_LABEL[tier.game]} · ${tier.name}.` });
-      if (head) nextPhoto(); else setF(blank);
-    } else {
-      setResult({ ok: false, text: `Couldn’t add it: ${r?.error || "something went wrong"}. Nothing was saved — try again.` });
+    try {
+      const r = await onAdd({ ...f, name, value: (Math.round(value * 100) / 100).toFixed(2), weight: String(weight), buyback_percent: bb === "" ? "" : String(Math.round(bb)) });
+      if (r?.ok) {
+        setResult({ ok: true, text: `✓ Added ${name} to ${GAME_LABEL[tier.game]} · ${tier.name}.` });
+        if (head) nextPhoto(); else setF(blank);
+      } else {
+        setResult({ ok: false, text: `Couldn’t add it: ${r?.error || "something went wrong"}. Nothing was saved — try again.` });
+      }
+    } catch (err) {
+      setResult({ ok: false, text: `Couldn’t add it: ${err.message || "something went wrong"}. Nothing was saved — try again.` });
+    } finally {
+      setBusy(false);
     }
-    setBusy(false);
   }
+  // Bring the result into view on a phone.
+  const resultRef = useRef(null);
+  useEffect(() => { if (result) resultRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" }); }, [result]);
 
   // The card looks like a different game than this pool (from the photo or the TCGplayer match).
   const wrongGame = f.game && f.game !== tier.game;
@@ -368,7 +387,7 @@ function AddCard({ tier, tiers, onPool, pick, onAdd }) {
   const readErr = head?.read?.error;
   const many = head?.read?.items?.length > 1;
   return (
-    <form className="add-card-box" onSubmit={submit}>
+    <form className="add-card-box" onSubmit={submit} noValidate>
       <label className="add-to">
         <span>Adding to</span>
         <select className="input" value={tier.id} onChange={e => { onPool(e.target.value); setResult(null); }} aria-label="Pool to add to">
@@ -410,13 +429,13 @@ function AddCard({ tier, tiers, onPool, pick, onAdd }) {
         <input className="input" placeholder="Card name" required {...bind("name")} />
         <input className="input" placeholder="Set" {...bind("set_name")} />
         <input className="input" placeholder="Grade (PSA 9, Raw NM…)" {...bind("grade")} />
-        <input className="input num" type="number" inputMode="decimal" step="0.01" min="0" placeholder="Value $" required {...bind("value")} />
-        <input className="input num" type="number" inputMode="numeric" min="0" max="100" placeholder="Buyback % (auto)" title="Leave blank to use the buyback rates above" {...bind("buyback_percent")} />
-        <input className="input num" type="number" inputMode="decimal" step="any" min="0" placeholder="Weight" title="Relative chance. 1 = normal; 0.5 = half as likely." {...bind("weight")} />
+        <input className="input num" type="text" inputMode="decimal" placeholder="Value $" aria-label="Value in dollars" {...bind("value")} />
+        <input className="input num" type="text" inputMode="numeric" placeholder="Buyback % (auto)" title="Leave blank to use the buyback rates above" {...bind("buyback_percent")} />
+        <input className="input num" type="text" inputMode="decimal" placeholder="Weight (1)" title="Relative chance. 1 = normal; 0.5 = half as likely." {...bind("weight")} />
         <label className="btn btn-small btn-ghost-dark file-btn">{f.image ? "Photo ✓" : "Photo"}<input type="file" accept="image/*" capture="environment" onChange={onPhoto} hidden /></label>
         <button className="btn btn-small" disabled={busy}>{busy ? "Adding…" : `Add to ${GAME_LABEL[tier.game]} · ${tier.name}`}</button>
       </div>
-      {result && <p className={result.ok ? "add-ok small" : "error small"}>{result.text}</p>}
+      {result && <p ref={resultRef} className={result.ok ? "add-ok small" : "error small add-err"} role="status">{result.text}</p>}
     </form>
   );
 }
