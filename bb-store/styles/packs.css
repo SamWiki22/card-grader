@@ -413,3 +413,11 @@
 .pool-hits { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .pool-hits li { display: flex; justify-content: space-between; gap: 10px; align-items: center; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); }
 .add-err { margin-top: 8px; font-weight: 600; }
+.fill-nums { border: 1px solid var(--line, #ddd); border-radius: 12px; padding: 12px; margin: 12px 0; flex-basis: 100%; }
+.fill-nums-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; }
+.fill-nums-bar { display: flex; gap: 8px; margin: 6px 0; }
+.fill-nums-list { list-style: none; padding: 0; margin: 6px 0 12px; max-height: 55vh; overflow-y: auto; }
+.fill-nums-list li { padding: 6px 0; border-bottom: 1px solid var(--line, #eee); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.fill-nums-list label { display: flex; gap: 10px; align-items: flex-start; width: 100%; }
+.fill-nums-list input[type=checkbox] { width: 20px; height: 20px; flex: none; margin-top: 2px; }
+.fill-nums-list select { width: 100%; }
