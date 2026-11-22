@@ -3,6 +3,7 @@ import { requireStaff } from "../../../lib/auth";
 import { marketCents } from "../../../lib/tcg";
 import { db, selectAll } from "../../../lib/catalog";
 import { bulkFloorCents } from "../../../lib/shared";
+import { changeQty } from "../../../lib/stock";
 
 // Photos come in as data URLs after rotating in the browser.
 export const config = { api: { bodyParser: { sizeLimit: "6mb" } } };
@@ -178,6 +179,61 @@ export default async function handler(req, res) {
       return res.json({ ok: true, saved });
     }
 
+    // Combine duplicate listings into one listing with the total quantity.
+    // { action: "duplicates" } → groups to review; { action: "merge", groups: [{ keep, ids }] } → combine.
+    case "duplicates":
+    case "merge": {
+      let { data, error } = await selectAll(() => db.from("items").select(DUP_COLS + ",rarity,foil").order("created_at").order("id"));
+      if (missingColumn(error)) ({ data, error } = await selectAll(() => db.from("items").select(DUP_COLS).order("created_at").order("id")));
+      if (error) return res.status(500).json({ error: error.message });
+      const { data: photos } = await selectAll(() => db.from("items").select("id").not("photo", "is", null).order("id"));
+      const hasPhoto = new Set((photos || []).map(r => r.id));
+      const groups = findDuplicates(data || [], hasPhoto);
+
+      if (b.action === "duplicates") return res.json({ ok: true, groups });
+
+      // Merge only what the server agrees are duplicates of each other.
+      const byKeep = new Map(groups.map(g => [g.keep.id, g]));
+      let merged = 0, listings = 0;
+      const problems = [];
+      for (const req of (Array.isArray(b.groups) ? b.groups : []).slice(0, 500)) {
+        const g = byKeep.get(String(req.keep || ""));
+        if (!g) continue;
+        const want = new Set((req.ids || []).map(String));
+        const dups = g.others.filter(o => want.has(o.id));
+        if (!dups.length) continue;
+        const keep = g.keep;
+        const patch = { updated_at: now() };
+        if (g.price != null && Number(keep.price) !== g.price && keep.price_source !== "tcgplayer") patch.price = g.price;
+        if (g.cost != null && Number(keep.cost) !== g.cost) patch.cost = g.cost;
+        if (g.rarity && !keep.rarity) patch.rarity = g.rarity;
+        const notes = [...new Set([keep, ...dups].map(x => String(x.notes || "").trim()).filter(Boolean))].join(" · ").slice(0, 500);
+        if (notes !== String(keep.notes || "")) patch.notes = notes;
+        if (!hasPhoto.has(keep.id)) {
+          const donor = dups.find(d => hasPhoto.has(d.id));
+          if (donor) { const { data: ph } = await db.from("items").select("photo").eq("id", donor.id).maybeSingle(); if (ph?.photo) patch.photo = ph.photo; }
+        }
+        await db.from("items").update(patch).eq("id", keep.id);
+        for (const d of dups) {
+          try {
+            // Add its stock to the kept listing first, then remove it only if nothing
+            // sold from it meanwhile; otherwise undo and leave it for next time.
+            if (d.quantity > 0) await changeQty(db, keep.id, d.quantity);
+            const { data: gone } = await db.from("items").delete().eq("id", d.id).eq("quantity", d.quantity).select("id");
+            if (!gone?.length) {
+              if (d.quantity > 0) await changeQty(db, keep.id, -d.quantity);
+              problems.push(`${d.name} changed while combining — left as is.`);
+              continue;
+            }
+            await db.from("offers").update({ item_id: keep.id, updated_at: now() }).eq("item_id", d.id).in("status", ["pending", "countered", "accepted"]);
+            listings++;
+          } catch (e) { console.error(e); problems.push(`${d.name}: ${e.message}`); }
+        }
+        merged++;
+      }
+      return res.json({ ok: true, merged, listings, problems });
+    }
+
     case "set-photo": {
       const photo = String(b.photo || "");
       if (!/^data:image\/(jpeg|png|webp);base64,/.test(photo) || photo.length > 5_000_000) return res.status(400).json({ error: "Invalid photo." });
@@ -189,4 +245,39 @@ export default async function handler(req, res) {
     default:
       return res.status(400).json({ error: "Unknown action." });
   }
+}
+
+// ── Duplicate listings ──────────────────────────────────────────────────────
+const DUP_COLS = "id,type,game,owner,name,set_name,condition,quantity,cost,price,notes,tcg_product_id,price_source,created_at";
+const dnorm = s => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/&/g, "and").replace(/[^a-z0-9/]+/g, " ").trim();
+
+// Same card = same type, game, name, set, condition, foil and owner (different owners
+// are never combined, so each person's stock stays theirs).
+function findDuplicates(rows, hasPhoto) {
+  const key = r => [r.type, r.game, dnorm(r.name), dnorm(r.set_name), r.type === "single" ? dnorm(r.condition) || "nm" : "", r.foil ? "foil" : "", r.owner || ""].join("|");
+  const buckets = new Map();
+  for (const r of rows) { const k = key(r); if (!buckets.has(k)) buckets.set(k, []); buckets.get(k).push(r); }
+  const out = [];
+  for (const list of buckets.values()) {
+    if (list.length < 2) continue;
+    // Keep the best listing: linked to TCGplayer, then has a photo, then has stock, then oldest.
+    const score = r => (r.tcg_product_id ? 4 : 0) + (hasPhoto.has(r.id) ? 2 : 0) + (r.quantity > 0 ? 1 : 0);
+    const sorted = [...list].sort((a, b) => score(b) - score(a) || String(a.created_at).localeCompare(String(b.created_at)));
+    const [keep, ...others] = sorted;
+    const qty = list.reduce((s, r) => s + Math.max(0, Number(r.quantity) || 0), 0);
+    // Price: the highest of the listings (never undersell); TCGplayer-synced keeps its own.
+    const price = keep.price_source === "tcgplayer" ? Number(keep.price) : Math.max(...list.map(r => Number(r.price) || 0));
+    // Cost: average per card, weighted by quantity (only listings that have a cost).
+    const costed = list.filter(r => Number(r.cost) > 0 && r.quantity > 0);
+    const units = costed.reduce((s, r) => s + r.quantity, 0);
+    const cost = units ? Math.round(costed.reduce((s, r) => s + Number(r.cost) * r.quantity, 0) / units * 100) / 100 : null;
+    out.push({
+      keep: { id: keep.id, name: keep.name, set_name: keep.set_name, condition: keep.condition, quantity: keep.quantity, price: Number(keep.price), cost: Number(keep.cost) || 0, notes: keep.notes || "", rarity: keep.rarity || "", price_source: keep.price_source || "" },
+      others: others.map(r => ({ id: r.id, name: r.name, quantity: r.quantity, price: Number(r.price) })),
+      total: qty, price, cost, rarity: list.map(r => r.rarity).find(Boolean) || "",
+      prices: [...new Set(list.map(r => Number(r.price) || 0))].sort((a, b) => a - b),
+      owner: keep.owner || "", game: keep.game, type: keep.type,
+    });
+  }
+  return out.sort((a, b) => b.others.length - a.others.length || a.keep.name.localeCompare(b.keep.name));
 }
