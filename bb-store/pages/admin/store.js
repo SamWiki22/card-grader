@@ -368,14 +368,22 @@ function AddPanel({ onClose, onAdded }) {
   );
 }
 // Rarity box + Foil switch, with the standard bulk price shown when it applies.
-function RarityInput({ f, setF, small }) {
+function RarityInput({ f, setF, small, price }) {
   const floor = bulkFloorCents(f.rarity, f.foil);
+  // Raise the price box right away (the server applies the same minimum when saving).
+  function change(patch) {
+    const next = { ...f, ...patch };
+    const min = bulkFloorCents(next.rarity, next.foil);
+    if (next.price !== undefined && min && Math.round(Number(next.price || 0) * 100) < min) next.price = (min / 100).toFixed(2);
+    setF(next);
+  }
+  const shown = f.price !== undefined ? f.price : price;
   return (
     <span className="rarity-input">
-      <input className={`input${small ? " input-sm" : ""}`} list="rarities" placeholder="Rarity (C, UC, R, SR…)" value={f.rarity || ""} onChange={e => setF({ ...f, rarity: e.target.value })} aria-label="Rarity" />
+      <input className={`input${small ? " input-sm" : ""}`} list="rarities" placeholder="Rarity (C, UC, R, SR…)" value={f.rarity || ""} onChange={e => change({ rarity: e.target.value })} aria-label="Rarity" />
       <datalist id="rarities">{RARITY_SUGGESTIONS.map(r => <option key={r} value={r} />)}</datalist>
-      <label className="foil-check"><input type="checkbox" checked={!!f.foil} onChange={e => setF({ ...f, foil: e.target.checked })} /> Foil</label>
-      {floor > 0 && <span className="muted small">min {money(floor / 100)}</span>}
+      <label className="foil-check"><input type="checkbox" checked={!!f.foil} onChange={e => change({ foil: e.target.checked })} /> Foil</label>
+      {floor > 0 && <span className="muted small">min {money(floor / 100)}{f.price === undefined && shown !== undefined && Math.round(Number(shown) * 100) < floor ? ` — price becomes ${money(floor / 100)} when you save` : ""}</span>}
     </span>
   );
 }
@@ -627,7 +635,7 @@ function PhotoViewer({ items, id, onGo, onClose, onSave, onClosed }) {
           <input className="input input-sm" {...bind("set_name")} aria-label="Set" placeholder="Set" />
           <input className="input input-sm viewer-cond" {...bind("condition")} aria-label="Condition" placeholder="Cond." />
         </div>
-        {hasRarity && it.type === "single" && <RarityInput f={f} setF={setF} small />}
+        {hasRarity && it.type === "single" && <RarityInput f={f} setF={setF} small price={it.price} />}
         <div className="viewer-actions">
           <button className="btn btn-small btn-ghost-dark" disabled={!dirty || busy} onClick={() => save(false)}>Save</button>
           <button className="btn" disabled={busy} onClick={() => save(true)}>{busy ? "Saving…" : dirty ? "Save & next →" : "Next →"}</button>
