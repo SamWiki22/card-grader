@@ -198,7 +198,7 @@ function PhotoBox({ label, value, onChange, required }) {
   return (
     <label className={`photo-box${value ? " has" : ""}`}>
       {value ? <img src={value} alt="" /> : <span>{label}{required ? " *" : ""}<br /><small>Tap to add</small></span>}
-      <input type="file" accept="image/*" capture="environment" onChange={onChange} hidden />
+      <input type="file" accept="image/*" onChange={onChange} hidden />
     </label>
   );
 }

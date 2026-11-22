@@ -327,7 +327,7 @@ function AddPanel({ onClose, onAdded }) {
         <button type="button" className="link-button" onClick={onClose}>Close</button>
       </div>
       <div className="add-panel-top">
-        <label className="btn snap-btn">{reading ? "Reading photo…" : "📷 Snap to add"}<input type="file" accept="image/*" capture="environment" onChange={onSnap} hidden disabled={reading} /></label>
+        <label className="btn snap-btn">{reading ? "Reading photo…" : "📷 Snap to add"}<input type="file" accept="image/*" onChange={onSnap} hidden disabled={reading} /></label>
         <button type="button" className="btn btn-ghost-dark" onClick={() => setPicker(true)}>🔎 Find on TCGplayer</button>
         <span className="muted small">{f.tcg ? `Matched TCGplayer #${f.tcg.productId} · ${f.tcg.subType}` : hint.q ? "Read from your photo — tap Find on TCGplayer to match the price, or check the details and add." : "Snap a photo, search TCGplayer, or type it in below."}</span>
       </div>
@@ -335,7 +335,7 @@ function AddPanel({ onClose, onAdded }) {
       <div className="add-grid">
         <label className={`add-photo${f.photo ? " has" : ""}`}>
           {f.photo ? <img src={f.photo} alt="" /> : <span>📷 Photo<br /><small>optional</small></span>}
-          <input type="file" accept="image/*" capture="environment" onChange={onPhoto} hidden />
+          <input type="file" accept="image/*" onChange={onPhoto} hidden />
         </label>
         <div className="add-fields">
           <input className="input" placeholder="Name" required {...bind("name")} />

@@ -39,7 +39,7 @@ export default async function handler(req, res) {
       selectAll(() => db.from("pack_cards").select("id").is("image", null).order("id")),
       db.from("shipments").select("*").order("created_at", { ascending: false }).limit(100),
       getBuybackRules(),
-      db.from("items").select(`id,name,set_name,game,condition,quantity,price,${TCG_COLS}`).eq("type", "single").order("name"),
+      selectAll(() => db.from("items").select(`id,name,set_name,game,condition,quantity,price,${TCG_COLS}`).eq("type", "single").order("name").order("id")),
       db.from("submissions").select(SUB_COLS).in("status", ["submitted", "offered", "accepted"]).order("created_at"),
       db.from("submissions").select(SUB_COLS).in("status", ["paid", "declined", "rejected"]).order("updated_at", { ascending: false }).limit(20),
     ]);
