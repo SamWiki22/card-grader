@@ -2,6 +2,17 @@ import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { changeQty } from "../lib/stock";
 
+// Open the camera (camera = true) or the photo gallery from a hidden file input.
+// Android only offers the camera when asked for it, and then only the camera.
+function pickPhoto(ref, camera) {
+  const el = ref.current;
+  if (!el) return;
+  if (camera) el.setAttribute("capture", "environment"); else el.removeAttribute("capture");
+  el.value = "";
+  el.click();
+}
+const libBtn = { marginTop: 8, width: "100%", padding: "10px 14px", borderRadius: 10, border: "1px dashed #c9c2b4", background: "transparent", color: "#7a7263", fontSize: 13, fontWeight: 700 };
+
 // ── Data / constants ──────────────────────────────────────────────────────
 
 const LAST_SOLD_BY_KEY = "bb-inventory-last-sold-by"; // per-device UI convenience only, not shop data
@@ -486,16 +497,18 @@ function ItemModal({ draft, onChange, onSave, onDelete, onClose, isNew, banner }
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                 <img src={draft.photo} alt="Item" style={{ width: 72, height: 72, objectFit: "cover", borderRadius: 12, border: `1px solid ${COLORS.border}` }} />
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  <button onClick={() => photoRef.current?.click()} disabled={photoBusy} style={{ padding: "8px 14px", borderRadius: 10, border: `1px solid ${COLORS.border}`, background: COLORS.bg, color: COLORS.textDim, fontSize: 12, fontWeight: 700 }}>🔄 Retake</button>
+                  <button onClick={() => pickPhoto(photoRef, true)} disabled={photoBusy} style={{ padding: "8px 14px", borderRadius: 10, border: `1px solid ${COLORS.border}`, background: COLORS.bg, color: COLORS.textDim, fontSize: 12, fontWeight: 700 }}>🔄 Retake</button>
+                  <button onClick={() => pickPhoto(photoRef, false)} disabled={photoBusy} style={{ padding: "8px 14px", borderRadius: 10, border: `1px solid ${COLORS.border}`, background: COLORS.bg, color: COLORS.textDim, fontSize: 12, fontWeight: 700 }}>🖼 From photos</button>
                   <button onClick={() => onChange({ ...draft, photo: null })} style={{ padding: "8px 14px", borderRadius: 10, border: `1px solid ${COLORS.danger}30`, background: COLORS.dangerSoft, color: COLORS.danger, fontSize: 12, fontWeight: 700 }}>🗑️ Remove</button>
                 </div>
               </div>
             ) : (
-              <button onClick={() => photoRef.current?.click()} disabled={photoBusy} style={{
+              <><button onClick={() => pickPhoto(photoRef, true)} disabled={photoBusy} style={{
                 width: "100%", padding: "16px 14px", borderRadius: 12, border: `1.5px dashed ${COLORS.border}`,
                 background: COLORS.bg, color: COLORS.textDim, fontSize: 13, fontWeight: 700,
                 display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
               }}>{photoBusy ? "Processing…" : "📷 Add a photo — helps the Sell scanner recognize this item"}</button>
+              <button onClick={() => pickPhoto(photoRef, false)} disabled={photoBusy} style={libBtn}>🖼 Choose from photos</button></>
             )}
           </div>
         ))}
@@ -667,7 +680,7 @@ function SellModal({ items, onConfirm, onClose }) {
         <input ref={fileRef} type="file" accept="image/*" onChange={handleFile} style={{ display: "none" }} />
 
         {!photoDataUrl ? (
-          <button onClick={() => fileRef.current?.click()} style={{
+          <><button onClick={() => pickPhoto(fileRef, true)} style={{
             width: "100%", padding: "44px 20px", borderRadius: 18, border: `2px dashed ${COLORS.amber}55`,
             background: COLORS.amberSoft, color: COLORS.amberDark, fontSize: 17, fontWeight: 800,
             display: "flex", flexDirection: "column", alignItems: "center", gap: 10,
@@ -675,6 +688,7 @@ function SellModal({ items, onConfirm, onClose }) {
             <span style={{ fontSize: 40 }}>📷</span>
             Take Photo of Item Sold
           </button>
+          <button onClick={() => pickPhoto(fileRef, false)} style={libBtn}>🖼 Choose from photos</button></>
         ) : (
           <>
             <div style={{ display: "flex", gap: 14, alignItems: "flex-start", marginBottom: 18 }}>
@@ -859,7 +873,7 @@ function PriceCheckModal({ items, onClose }) {
         <input ref={fileRef} type="file" accept="image/*" onChange={handleFile} style={{ display: "none" }} />
 
         {!photoDataUrl ? (
-          <button onClick={() => fileRef.current?.click()} style={{
+          <><button onClick={() => pickPhoto(fileRef, true)} style={{
             width: "100%", padding: "44px 20px", borderRadius: 18, border: `2px dashed ${COLORS.info}55`,
             background: COLORS.infoSoft, color: COLORS.info, fontSize: 17, fontWeight: 800,
             display: "flex", flexDirection: "column", alignItems: "center", gap: 10,
@@ -867,6 +881,7 @@ function PriceCheckModal({ items, onClose }) {
             <span style={{ fontSize: 40 }}>📷</span>
             Take Photo to Check Price
           </button>
+          <button onClick={() => pickPhoto(fileRef, false)} style={libBtn}>🖼 Choose from photos</button></>
         ) : (
           <>
             <div style={{ display: "flex", gap: 14, alignItems: "flex-start", marginBottom: 18 }}>
@@ -1550,11 +1565,15 @@ export default function BBInventory() {
               background: COLORS.good, border: "none", color: "#fff", fontSize: 15, fontWeight: 800,
               boxShadow: "0 2px 8px rgba(91,123,74,0.3)",
             }}>📷 Sell</button>
-            <button onClick={() => scanRef.current?.click()} style={{
+            <button onClick={() => pickPhoto(scanRef, true)} style={{
               display: "flex", alignItems: "center", gap: 8, padding: "0 18px", height: 44, borderRadius: 12,
               background: COLORS.info, border: "none", color: "#fff", fontSize: 15, fontWeight: 800,
               boxShadow: "0 2px 8px rgba(62,107,138,0.3)",
             }}>📷 Scan to Add</button>
+            <button onClick={() => pickPhoto(scanRef, false)} title="Scan from a photo you already took" style={{
+              display: "flex", alignItems: "center", gap: 8, padding: "0 14px", height: 44, borderRadius: 12,
+              background: COLORS.bg, border: `1px solid ${COLORS.border}`, color: COLORS.text, fontSize: 15, fontWeight: 800,
+            }}>🖼 From photos</button>
             <button onClick={() => openAdd(activeType !== "all" ? activeType : "box")} style={{
               display: "flex", alignItems: "center", gap: 8, padding: "0 20px", height: 44, borderRadius: 12,
               background: COLORS.amber, border: "none", color: "#fff", fontSize: 15, fontWeight: 800,

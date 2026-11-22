@@ -56,7 +56,7 @@ export default function PhotoPass({ tier, cards, onDone }) {
               </div>
               <label className={`btn pass-shoot${busy ? " disabled" : ""}`}>
                 {busy ? "Saving…" : "📷 Take photo"}
-                <input type="file" accept="image/*" onChange={onFile} hidden disabled={busy} />
+                <input type="file" accept="image/*" capture="environment" onChange={onFile} hidden disabled={busy} />
               </label>
               <div className="pass-row">
                 <label className="btn btn-small btn-ghost-dark">🖼 From library<input type="file" accept="image/*" onChange={onFile} hidden disabled={busy} /></label>
