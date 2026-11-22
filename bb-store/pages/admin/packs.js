@@ -399,7 +399,7 @@ function AddCard({ tier, tiers, onPool, pick, onAdd }) {
         </select>
       </label>
       <div className="snap-row">
-        <label className="btn snap-btn">📷 Snap card<input type="file" accept="image/*" capture="environment" onChange={onPhotos} hidden /></label>
+        <label className="btn snap-btn">📷 Snap card<input type="file" accept="image/*" multiple onChange={onPhotos} hidden /></label>
         <label className="btn btn-ghost-dark">🖼 Pick photos<input type="file" accept="image/*" multiple onChange={onPhotos} hidden /></label>
         <button type="button" className="btn btn-ghost-dark" onClick={() => pick(tier.game, fromTcg, { initialQuery: hint.q, initialSetFilter: hint.set })}>🔎 TCGplayer</button>
       </div>
@@ -436,7 +436,7 @@ function AddCard({ tier, tiers, onPool, pick, onAdd }) {
         <input className="input num" type="text" inputMode="decimal" placeholder="Value $" aria-label="Value in dollars" {...bind("value")} />
         <input className="input num" type="text" inputMode="numeric" placeholder="Buyback % (auto)" title="Leave blank to use the buyback rates above" {...bind("buyback_percent")} />
         <input className="input num" type="text" inputMode="decimal" placeholder="Weight (1)" title="Relative chance. 1 = normal; 0.5 = half as likely." {...bind("weight")} />
-        <label className="btn btn-small btn-ghost-dark file-btn">{f.image ? "Photo ✓" : "Photo"}<input type="file" accept="image/*" capture="environment" onChange={onPhoto} hidden /></label>
+        <label className="btn btn-small btn-ghost-dark file-btn">{f.image ? "Photo ✓" : "Photo"}<input type="file" accept="image/*" onChange={onPhoto} hidden /></label>
         <button className="btn btn-small" disabled={busy}>{busy ? "Adding…" : `Add to ${GAME_LABEL[tier.game]} · ${tier.name}`}</button>
       </div>
       {result && <p ref={resultRef} className={result.ok ? "add-ok small" : "error small add-err"} role="status">{result.text}</p>}
@@ -469,7 +469,7 @@ function CardRow({ c, tiers, rules, total, onSave, onLink, onUnlink, onComp }) {
         <div className="card-cell">
           <label className={`card-thumb${c.has_photo ? "" : " missing"}`} title={c.has_photo ? "Replace photo" : "Add photo"}>
             {uploading ? <span>…</span> : c.has_photo ? <img src={cardPhotoUrl(c)} alt="" loading="lazy" /> : <span>📷</span>}
-            <input type="file" accept="image/*" capture="environment" onChange={onPhoto} hidden />
+            <input type="file" accept="image/*" onChange={onPhoto} hidden />
           </label>
           <div>{c.name}<div className="muted small">{c.set_name}{c.owner ? ` · ${OWNER_NAMES[c.owner] || c.owner}` : ""}{c.cost_cents ? ` · cost ${centsToMoney(c.cost_cents)}` : ""}{c.has_photo ? "" : <span className="needs-photo"> · no photo</span>}</div></div>
         </div>

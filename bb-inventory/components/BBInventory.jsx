@@ -481,7 +481,7 @@ function ItemModal({ draft, onChange, onSave, onDelete, onClose, isNew, banner }
 
         {field("PHOTO (OPTIONAL)", (
           <div>
-            <input ref={photoRef} type="file" accept="image/*" capture="environment" onChange={handlePhotoFile} style={{ display: "none" }} />
+            <input ref={photoRef} type="file" accept="image/*" onChange={handlePhotoFile} style={{ display: "none" }} />
             {draft.photo ? (
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                 <img src={draft.photo} alt="Item" style={{ width: 72, height: 72, objectFit: "cover", borderRadius: 12, border: `1px solid ${COLORS.border}` }} />
@@ -664,7 +664,7 @@ function SellModal({ items, onConfirm, onClose }) {
           <button onClick={onClose} style={{ width: 40, height: 40, borderRadius: 10, border: `1px solid ${COLORS.border}`, background: COLORS.bg, fontSize: 16 }}>✕</button>
         </div>
 
-        <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={handleFile} style={{ display: "none" }} />
+        <input ref={fileRef} type="file" accept="image/*" onChange={handleFile} style={{ display: "none" }} />
 
         {!photoDataUrl ? (
           <button onClick={() => fileRef.current?.click()} style={{
@@ -856,7 +856,7 @@ function PriceCheckModal({ items, onClose }) {
           <button onClick={onClose} style={{ width: 40, height: 40, borderRadius: 10, border: `1px solid ${COLORS.border}`, background: COLORS.bg, fontSize: 16 }}>✕</button>
         </div>
 
-        <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={handleFile} style={{ display: "none" }} />
+        <input ref={fileRef} type="file" accept="image/*" onChange={handleFile} style={{ display: "none" }} />
 
         {!photoDataUrl ? (
           <button onClick={() => fileRef.current?.click()} style={{
@@ -1526,7 +1526,7 @@ export default function BBInventory() {
         </div>
       )}
       <input ref={importRef} type="file" accept="application/json" onChange={handleImportFile} style={{ display: "none" }} />
-      <input ref={scanRef} type="file" accept="image/*" capture="environment" onChange={handleScanFile} style={{ display: "none" }} />
+      <input ref={scanRef} type="file" accept="image/*" onChange={handleScanFile} style={{ display: "none" }} />
 
       {/* Header */}
       <div style={{ padding: "22px 20px 16px", maxWidth: 1100, margin: "0 auto" }}>
