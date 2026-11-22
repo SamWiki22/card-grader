@@ -48,76 +48,116 @@ async function products(cat, groupId) {
   return (await get(`/${cat}/${groupId}/products`)).filter(p => ext(p, "Number")); // singles only
 }
 
-// rows: [{ id, name, set_name, game, tcg_category_id, tcg_group_id, tcg_product_id }]
-// Returns { found: [{ id, from, to, number, set }], choose: [{ id, from, set, options: [{ number, label, to }] }], skipped: [{ id, name, why }] }
+// A card code inside a name ("Scratchmen Apoo OP17-070") and the name without it.
+const CODE_IN_NAME = /\s+#?([A-Z]{1,5}\d{0,3}[A-Z]?-[A-Z]?\d{2,4}[A-Z]?)$/i;
+// A plain trailing number ("Lightning Bolt 146", "Charizard ex 223/197").
+const NUM_IN_NAME = /\s+#?(\d{1,4}[a-z]?(?:\s*\/\s*\d{1,4})?)$/i;
+const numKey = s => String(s || "").split("/")[0].trim().replace(/^0+(?=\d)/, "").toLowerCase();
+const isMainSet = g => !/\bRE\b|release event/i.test(`${g.abbr} ${g.name}`);
+
+// rows: [{ id, name, set_name, game, rarity?, tcg_category_id, tcg_group_id, tcg_product_id }]
+// Fills in what's missing: the card number (after the name), the real set name when a card
+// number was typed in the Set box, and the rarity (when withRarity).
+// Returns { found: [{ id, from, to, number, set, fromSet?, toSet?, rarity? }],
+//           choose: [{ id, from, set, options: [{ number, label, to, toSet?, rarity? }] }],
+//           skipped: [{ id, name, why }] }
 // Stops early (done: false) when it runs out of time so the phone can ask for the rest.
-export async function findNumbers(rows, { deadline = Date.now() + 8000 } = {}) {
+export async function findNumbers(rows, { deadline = Date.now() + 8000, withRarity = false } = {}) {
   const found = [], choose = [], skipped = [];
   const groupCache = new Map();
+  const groups = async game => { if (!groupCache.has(game)) groupCache.set(game, await groupsFor(game)); return groupCache.get(game); };
+  const wantRarity = r => withRarity && !String(r.rarity || "").trim();
+
+  // One match: record only what actually changes.
+  function hit(r, { to = r.name, number, set = r.set_name, toSet, rarity, moved }) {
+    const rar = wantRarity(r) && rarity ? rarity : "";
+    if (to === r.name && !toSet && !rar) return skipped.push({ id: r.id, name: r.name, why: "TCGplayer has nothing new for this card" });
+    found.push({ id: r.id, from: r.name, to, number, set, ...(toSet ? { fromSet: r.set_name, toSet } : {}), ...(rar ? { rarity: rar } : {}), ...(moved ? { moved: true } : {}) });
+  }
+
+  // Look a card up by its code (OP17-070, FB01-001, BT1-031…) across the game's sets.
+  async function byCode(r, code, nameBase, fixSet) {
+    const prefix = squash(code.split("-")[0]);
+    const all = await groups(r.game);
+    let gs = all.filter(g => g.abbr && squash(g.abbr).startsWith(prefix));
+    if (!gs.length) gs = all;
+    const hits = [];
+    for (const g of gs) {
+      if (Date.now() > deadline + 4000) break;
+      for (const p of await products(g.cat, g.groupId)) if (ext(p, "Number").toUpperCase() === code) hits.push({ p, g });
+    }
+    const mine = hits.filter(h => norm(h.p.name) === norm(nameBase));
+    const same = mine.length ? mine : hits.filter(h => base(h.p.name) === base(nameBase));
+    const main = same.filter(h => isMainSet(h.g));
+    const pickFrom = main.length ? main : same;
+    const name = hasNumber(r.name) ? r.name : withNumber(r.name, code);
+    const sets = [...new Set(pickFrom.map(h => h.g.name))];
+    if (sets.length === 1) {
+      const p = pickFrom[0].p;
+      return hit(r, { to: name, number: code, set: fixSet ? sets[0] : r.set_name, toSet: fixSet ? sets[0] : undefined, rarity: ext(p, "Rarity"), moved: fixSet });
+    }
+    if (hits.length) {
+      const opts = [...new Map(hits.map(h => [`${h.g.groupId}|${h.p.name}`, h])).values()].slice(0, 12);
+      return choose.push({ id: r.id, from: r.name, fromSet: fixSet ? r.set_name : undefined, set: r.set_name, options: opts.map(h => ({
+        number: `${code}|${h.g.groupId}|${h.p.productId}`, label: `${h.p.name} · ${h.g.name}${ext(h.p, "Rarity") ? ` · ${ext(h.p, "Rarity")}` : ""}`,
+        to: name, ...(fixSet ? { toSet: h.g.name } : {}), ...(wantRarity(r) && ext(h.p, "Rarity") ? { rarity: ext(h.p, "Rarity") } : {}),
+      })) });
+    }
+    return skipped.push({ id: r.id, name: r.name, why: `card number ${code} not found on TCGplayer` });
+  }
+
   let i = 0;
   for (; i < rows.length; i++) {
     if (Date.now() > deadline) break;
     const r = rows[i];
     try {
-      // 1. Already linked to TCGplayer: read the number straight off the product.
+      // 1. Already linked to TCGplayer: read it straight off the product.
       if (r.tcg_product_id && r.tcg_group_id && r.tcg_category_id) {
         const p = (await products(r.tcg_category_id, r.tcg_group_id)).find(x => x.productId === Number(r.tcg_product_id));
-        if (p) { found.push({ id: r.id, from: r.name, to: withNumber(r.name, ext(p, "Number")), number: ext(p, "Number"), set: r.set_name }); continue; }
+        if (p) { hit(r, { to: hasNumber(r.name) ? r.name : withNumber(r.name, ext(p, "Number")), number: ext(p, "Number"), rarity: ext(p, "Rarity") }); continue; }
       }
       if (!sourcesFor(r.game).length) { skipped.push({ id: r.id, name: r.name, why: "game not on TCGplayer" }); continue; }
 
-      // 2. The card number was typed in the Set box ("OP17-070"): find that number,
-      //    put it after the name and fill in the real set name.
-      if (isCode(r.set_name)) {
-        if (!groupCache.has(r.game)) groupCache.set(r.game, await groupsFor(r.game));
-        const code = r.set_name.trim().toUpperCase();
-        const prefix = squash(code.split("-")[0]);
-        const all = groupCache.get(r.game);
-        let groups = all.filter(g => g.abbr && squash(g.abbr).startsWith(prefix));
-        if (!groups.length) groups = all;
-        let hits = [];
-        for (const g of groups) {
-          if (Date.now() > deadline + 4000) break;
-          for (const p of await products(g.cat, g.groupId)) if (ext(p, "Number").toUpperCase() === code) hits.push({ p, g });
-        }
-        const name = hasNumber(r.name) ? r.name : withNumber(r.name, code);
-        const mine = hits.filter(h => norm(h.p.name) === norm(r.name));
-        const same = mine.length ? mine : hits.filter(h => base(h.p.name) === base(r.name));
-        // Prefer the main set over its release-event / promo versions.
-        const main = same.filter(h => !/\bRE\b|release event/i.test(`${h.g.abbr} ${h.g.name}`));
-        const pickFrom = main.length ? main : same;
-        const sets = [...new Set(pickFrom.map(h => h.g.name))];
-        if (sets.length === 1) found.push({ id: r.id, from: r.name, fromSet: r.set_name, to: name, number: code, set: sets[0], toSet: sets[0], moved: true });
-        else if (hits.length) choose.push({ id: r.id, from: r.name, fromSet: r.set_name, set: r.set_name, options: [...new Map(hits.map(h => [h.g.name, h])).values()].slice(0, 12).map(h => ({ number: `${code}|${h.g.groupId}`, label: `${h.p.name} · ${h.g.name}`, to: name, toSet: h.g.name })) });
-        else skipped.push({ id: r.id, name: r.name, why: `card number ${code} (typed in the Set box) not found on TCGplayer` });
-        continue;
-      }
+      // 2. Card number typed in the Set box ("OP17-070"): move it after the name, fill in the real set.
+      if (isCode(r.set_name)) { await byCode(r, r.set_name.trim().toUpperCase(), r.name, true); continue; }
+
+      // 3. Card code already in the name ("Scratchmen Apoo OP17-070").
+      const inName = r.name.match(CODE_IN_NAME);
+      if (inName) { await byCode(r, inName[1].toUpperCase(), r.name.replace(CODE_IN_NAME, ""), !r.set_name); continue; }
+
       if (!r.set_name) { skipped.push({ id: r.id, name: r.name, why: "no set listed" }); continue; }
 
-      // 2. Match the set by name (or its code, e.g. "MH3"), then the card by name.
-      if (!groupCache.has(r.game)) groupCache.set(r.game, await groupsFor(r.game));
+      // 4. Match the set by name (or its code, e.g. "MH3"), then the card.
+      const all = await groups(r.game);
       const want = norm(r.set_name);
-      const all = groupCache.get(r.game);
       let sets = all.filter(g => norm(g.name) === want || (g.abbr && norm(g.abbr) === want));
       // Looser: ignore "(M10)" codes and "SV03:" style prefixes on either side.
       if (!sets.length) { const w = setKey(r.set_name); sets = all.filter(g => setKey(g.name) === w); }
       if (!sets.length) { skipped.push({ id: r.id, name: r.name, why: `set “${r.set_name}” not found on TCGplayer` }); continue; }
 
-      const full = norm(r.name), plain = base(r.name);
+      // Name already ends in a number ("Lightning Bolt 146"): match name + number.
+      const numMatch = hasNumber(r.name) ? r.name.match(NUM_IN_NAME) : null;
+      const nameBase = numMatch ? r.name.replace(NUM_IN_NAME, "") : r.name;
+      const full = norm(nameBase), plain = base(nameBase);
       let hits = [];
       for (const g of sets) {
         const ps = await products(g.cat, g.groupId);
-        const exact = ps.filter(p => norm(p.name) === full);
-        hits.push(...(exact.length ? exact : ps.filter(p => base(p.name) === plain)).map(p => ({ number: ext(p, "Number"), label: p.name, rarity: ext(p, "Rarity") })));
+        let mine = ps.filter(p => norm(p.name) === full);
+        if (!mine.length) mine = ps.filter(p => base(p.name) === plain);
+        if (numMatch) mine = mine.filter(p => numKey(ext(p, "Number")) === numKey(numMatch[1]));
+        hits.push(...mine.map(p => ({ number: ext(p, "Number"), label: p.name, rarity: ext(p, "Rarity") })));
       }
       // Same number listed twice (e.g. foil/non-foil products) counts once.
       const byNum = new Map();
       for (const h of hits) if (!byNum.has(h.number)) byNum.set(h.number, h);
       hits = [...byNum.values()];
+      const named = n => (numMatch ? r.name : withNumber(r.name, n));
 
-      if (hits.length === 1) found.push({ id: r.id, from: r.name, to: withNumber(r.name, hits[0].number), number: hits[0].number, set: r.set_name });
-      else if (hits.length > 1) choose.push({ id: r.id, from: r.name, set: r.set_name, options: hits.slice(0, 12).map(h => ({ number: h.number, label: `${h.label} · #${h.number}${h.rarity ? ` · ${h.rarity}` : ""}`, to: withNumber(r.name, h.number) })) });
-      else skipped.push({ id: r.id, name: r.name, why: `no card by that name in ${r.set_name}` });
+      if (hits.length === 1) hit(r, { to: named(hits[0].number), number: hits[0].number, rarity: hits[0].rarity });
+      else if (hits.length > 1) choose.push({ id: r.id, from: r.name, set: r.set_name, options: hits.slice(0, 12).map(h => ({
+        number: h.number, label: `${h.label} · #${h.number}${h.rarity ? ` · ${h.rarity}` : ""}`, to: named(h.number), ...(wantRarity(r) && h.rarity ? { rarity: h.rarity } : {}),
+      })) });
+      else skipped.push({ id: r.id, name: r.name, why: `no card by that name${numMatch ? ` and number` : ""} in ${r.set_name}` });
     } catch (e) {
       skipped.push({ id: r.id, name: r.name, why: e.message });
     }

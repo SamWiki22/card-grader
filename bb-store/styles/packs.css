@@ -421,3 +421,9 @@
 .fill-nums-list label { display: flex; gap: 10px; align-items: flex-start; width: 100%; }
 .fill-nums-list input[type=checkbox] { width: 20px; height: 20px; flex: none; margin-top: 2px; }
 .fill-nums-list select { width: 100%; }
+
+.rarity-input { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; flex: 1 1 100%; }
+.rarity-input .input { flex: 1 1 120px; min-width: 0; }
+.foil-check { display: inline-flex; gap: 6px; align-items: center; white-space: nowrap; }
+.foil-check input { width: 18px; height: 18px; }
+.rarity-tag { display: inline-block; font-size: .78em; font-weight: 700; padding: 1px 6px; border-radius: 6px; border: 1px solid rgba(224,176,74,.6); color: #e0b04a; }

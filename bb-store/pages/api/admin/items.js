@@ -2,15 +2,19 @@ import { randomBytes } from "crypto";
 import { requireStaff } from "../../../lib/auth";
 import { marketCents } from "../../../lib/tcg";
 import { db, selectAll } from "../../../lib/catalog";
+import { bulkFloorCents } from "../../../lib/shared";
 
 // Photos come in as data URLs after rotating in the browser.
 export const config = { api: { bodyParser: { sizeLimit: "6mb" } } };
 
 // Every column BB Inventory edits, minus the photo blob.
 const COLS = "id,type,game,owner,name,set_name,sku,condition,quantity,cost,price,low_stock,notes,tcg_product_id,price_source,created_at,updated_at";
+const RARITY_COLS = ",rarity,foil";
+const NEEDS_SQL = "Rarity needs a one-time database update: run supabase/packs.sql in Supabase (SQL Editor), then try again.";
+const missingColumn = e => e && (e.code === "42703" || e.code === "PGRST204" || /rarity|foil/.test(e.message || "") && /column/.test(e.message || ""));
 const OWNERS = ["sam", "bear_umer", "shared"];
 const TYPES = ["single", "box", "pack"];
-const EDITABLE = { name: "text", set_name: "text", condition: "text", game: "text", type: "text", owner: "text", notes: "text", sku: "text", quantity: "int", price: "money", cost: "money" };
+const EDITABLE = { name: "text", set_name: "text", condition: "text", game: "text", type: "text", owner: "text", notes: "text", sku: "text", quantity: "int", price: "money", cost: "money", rarity: "text", foil: "bool" };
 const now = () => new Date().toISOString();
 
 // Inventory admin (staff + admins): list, add, edit, delete, mark sales, hide sold-out stock, replace photos.
@@ -21,9 +25,12 @@ export default async function handler(req, res) {
 
   if (req.method === "GET") {
     // id breaks ties so cards never jump around; selectAll pages past Supabase's 1,000-row limit.
-    const { data, error } = await selectAll(() => db.from("items").select(COLS).order("created_at", { ascending: false }).order("id"));
+    let { data, error } = await selectAll(() => db.from("items").select(COLS + RARITY_COLS).order("created_at", { ascending: false }).order("id"));
+    let rarity = true;
+    // Database not updated yet: still show everything, just without rarity.
+    if (missingColumn(error)) { rarity = false; ({ data, error } = await selectAll(() => db.from("items").select(COLS).order("created_at", { ascending: false }).order("id"))); }
     if (error) { console.error(error); return res.status(500).json({ error: error.message }); }
-    return res.json({ items: data });
+    return res.json({ items: data, rarity });
   }
   if (req.method !== "POST") return res.status(405).end();
 
@@ -54,6 +61,8 @@ export default async function handler(req, res) {
         low_stock: 0,
         notes: String(f.notes || "").slice(0, 500),
         photo: okPhoto ? photo : null,
+        ...(String(f.rarity || "").trim() ? { rarity: String(f.rarity).trim().slice(0, 40) } : {}),
+        ...(f.foil ? { foil: true } : {}),
         ...(t ? {
           tcg_category_id: Number(t.categoryId), tcg_group_id: Number(t.groupId), tcg_product_id: Number(t.productId),
           tcg_subtype: String(t.subType || "").slice(0, 40) || null,
@@ -66,7 +75,11 @@ export default async function handler(req, res) {
         const m = await marketCents(row.tcg_category_id, row.tcg_group_id, row.tcg_product_id, row.tcg_subtype).catch(() => null);
         if (m != null) row.price = m / 100;
       }
+      // Bulk singles never go below the standard rate for their rarity.
+      const floor = row.type === "single" ? bulkFloorCents(row.rarity, row.foil) : 0;
+      if (floor && Math.round(row.price * 100) < floor) row.price = floor / 100;
       const { error } = await db.from("items").insert(row);
+      if (missingColumn(error)) return res.status(500).json({ error: NEEDS_SQL });
       if (error) { console.error(error); return res.status(500).json({ error: error.message }); }
       return res.json({ ok: true, id: row.id, price: row.price });
     }
@@ -84,10 +97,21 @@ export default async function handler(req, res) {
         const v = b.fields[k];
         if (kind === "int") patch[k] = Math.max(0, Math.round(Number(v) || 0));
         else if (kind === "money") patch[k] = Math.max(0, Math.round(Number(v) * 100) / 100 || 0);
+        else if (kind === "bool") patch[k] = !!v;
         else if (k === "owner") patch[k] = OWNERS.includes(v) ? v : "";
-        else patch[k] = String(v).slice(0, 200);
+        else patch[k] = String(v).trim().slice(0, 200);
+      }
+      // Changing rarity/foil/price on a single: keep it at or above the standard bulk rate.
+      if ("rarity" in patch || "foil" in patch || "price" in patch) {
+        const { data: cur } = await db.from("items").select("type,price,rarity,foil").eq("id", id).maybeSingle();
+        if (cur) {
+          const next = { ...cur, ...patch };
+          const floor = next.type === "single" ? bulkFloorCents(next.rarity, next.foil) : 0;
+          if (floor && Math.round(Number(next.price) * 100) < floor) patch.price = floor / 100;
+        }
       }
       const { error } = await db.from("items").update(patch).eq("id", id);
+      if (missingColumn(error)) return res.status(500).json({ error: NEEDS_SQL });
       if (error) return res.status(500).json({ error: error.message });
       return res.json({ ok: true });
     }
@@ -133,6 +157,25 @@ export default async function handler(req, res) {
       const { error } = await db.from("items").update({ quantity: Math.max(0, Math.round(Number(b.quantity) || 0)), updated_at: now() }).in("id", ids);
       if (error) return res.status(500).json({ error: error.message });
       return res.json({ ok: true, count: ids.length });
+    }
+
+    // Standard bulk prices: raise every single priced under its rarity's rate.
+    // { apply: false } just counts; { apply: true } saves.
+    case "bulk-prices": {
+      const { data, error } = await selectAll(() => db.from("items").select("id,name,type,price,rarity,foil,quantity").eq("type", "single").order("id"));
+      if (missingColumn(error)) return res.status(500).json({ error: NEEDS_SQL });
+      if (error) return res.status(500).json({ error: error.message });
+      const low = (data || []).map(r => ({ ...r, floor: bulkFloorCents(r.rarity, r.foil) }))
+        .filter(r => r.floor && Math.round(Number(r.price) * 100) < r.floor);
+      const noRarity = (data || []).filter(r => !String(r.rarity || "").trim() && r.quantity > 0).length;
+      if (!b.apply) return res.json({ ok: true, count: low.length, noRarity, sample: low.slice(0, 8).map(r => ({ name: r.name, rarity: r.rarity, foil: r.foil, from: Number(r.price), to: r.floor / 100 })) });
+      let saved = 0;
+      for (const r of low) {
+        // Only if the price hasn't changed since we looked.
+        const { data: u } = await db.from("items").update({ price: r.floor / 100, updated_at: now() }).eq("id", r.id).eq("price", r.price).select("id");
+        if (u?.length) saved++;
+      }
+      return res.json({ ok: true, saved });
     }
 
     case "set-photo": {

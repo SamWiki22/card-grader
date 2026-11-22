@@ -3,13 +3,16 @@
 // TCGplayer has no price for a card, its recorded last sale (comp) is used instead.
 import { db } from "./catalog";
 import { setPrices } from "./tcg";
+import { bulkFloorCents } from "./shared";
 
 const LINK = "id,tcg_category_id,tcg_group_id,tcg_product_id,tcg_subtype,comp_cents";
 
 export async function refreshPrices() {
   const [cards, items] = await Promise.all([
     db.from("pack_cards").select(`${LINK},market_value_cents`).eq("price_source", "tcgplayer").in("status", ["available", "held", "ship_requested", "retired"]),
-    db.from("items").select(`${LINK},price`).eq("price_source", "tcgplayer"),
+    db.from("items").select(`${LINK},price,type,rarity,foil`).eq("price_source", "tcgplayer")
+      // Before the rarity columns exist, sync without them.
+      .then(r => (r.error && /rarity|foil/.test(r.error.message || "") ? db.from("items").select(`${LINK},price`).eq("price_source", "tcgplayer") : r)),
   ]);
   if (cards.error) throw cards.error;
   if (items.error) throw items.error;
@@ -35,6 +38,8 @@ export async function refreshPrices() {
       if (cents === Number(r.market_value_cents)) { unchanged++; continue; }
       await db.from("pack_cards").update({ market_value_cents: cents, price_updated_at: now, updated_at: now }).eq("id", r.id);
     } else {
+      // Bulk singles stay at or above the standard rate for their rarity.
+      if (r.type === "single") cents = Math.max(cents, bulkFloorCents(r.rarity, r.foil));
       if (Math.round(Number(r.price) * 100) === cents) { unchanged++; continue; }
       await db.from("items").update({ price: cents / 100, price_updated_at: now }).eq("id", r.id);
     }

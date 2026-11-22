@@ -89,7 +89,7 @@ export default function TcgPicker({ sources = TCG_SOURCES, initialGame, onPick, 
                   {c.prices.length ? c.prices.map(p => (
                     <button key={p.subType} className="btn btn-small btn-ghost-dark" onClick={() => onPick({
                       categoryId: c.categoryId, groupId: c.groupId, productId: c.productId, subType: p.subType,
-                      name: c.name, setName, number: c.number, imageUrl: c.imageUrl, cents: p.cents, autoPrice, sealed,
+                      name: c.name, setName, number: c.number, rarity: c.rarity, imageUrl: c.imageUrl, cents: p.cents, autoPrice, sealed,
                     })}>{p.subType} · {centsToMoney(p.cents)}</button>
                   )) : <span className="muted small">No market price yet</span>}
                 </div>
