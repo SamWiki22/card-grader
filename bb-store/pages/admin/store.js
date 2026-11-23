@@ -87,6 +87,7 @@ export default function Inventory() {
   const [busy, setBusy] = useState("");
   const [adding, setAdding] = useState(false);
   const [recording, setRecording] = useState(false);
+  const [bulk, setBulk] = useState(false);
 
   // Standard bulk prices (C $0.29 · UC $0.59 · R $1; foil C $0.59 · UC $1.19 · R and others $2): preview, confirm, save.
   async function bulkPrices() {
@@ -189,9 +190,11 @@ export default function Inventory() {
 
         {adding && <AddPanel onClose={() => setAdding(false)} onAdded={async (name, qty) => { await load(); setMsg(`Added ${qty} × ${name}.`); }} />}
         {recording && <RecordSales items={items} onClose={() => setRecording(false)} onDone={async n => { await load(); setMsg(`Recorded ${n} sale${n === 1 ? "" : "s"}.`); }} />}
-        {!adding && !recording && (
+        {bulk && <BulkAdd onClose={() => setBulk(false)} onAdded={async n => { await load(); setMsg(`Added ${n} card${n === 1 ? "" : "s"} from photos. Same card listed twice? Use ⧉ Combine duplicates.`); }} />}
+        {!adding && !recording && !bulk && (
           <div className="inv-top-actions">
             <button className="btn" onClick={() => { setAdding(true); setMsg(""); }}>+ Add cards or sealed</button>
+            <button className="btn" onClick={() => { setBulk(true); setMsg(""); }}>📚 Bulk add photos</button>
             <button className="btn btn-ghost-dark" onClick={() => { setRecording(true); setMsg(""); }}>📷 Record sales</button>
             <FillNumbers where="store" onDone={async m => { await load(); setMsg(m); }} />
             <button className="btn btn-ghost-dark" onClick={bulkPrices}>💲 Bulk prices</button>
@@ -696,4 +699,153 @@ function downloadCSV(items) {
   a.href = url; a.download = name;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+// 📚 Bulk add photos: pick a batch of photos → each is read (name, set, number, foil) and
+// looked up on TCGplayer (rarity, market price) → check the list → Add all.
+const BULK_MAX = 60;
+let bulkKey = 0;
+function BulkAdd({ onClose, onAdded }) {
+  const prefs = (() => { try { return JSON.parse(localStorage.getItem(PREFS)) || {}; } catch { return {}; } })();
+  const [owner, setOwner] = useState(prefs.owner || "");
+  const [cond, setCond] = useState(prefs.condition || "NM");
+  const [sync, setSync] = useState(false);
+  const [rows, setRows] = useState([]);   // one per card found (a photo can hold several)
+  const [queue, setQueue] = useState([]); // photos still being read: { key, file }
+  const [reading, setReading] = useState(0);
+  const [busy, setBusy] = useState("");
+  const [msg, setMsg] = useState("");
+
+  function rowFrom(it, photo, tcg) {
+    const floor = it.type === "single" ? bulkFloorCents(tcg?.rarity, it.foil) : 0;
+    const market = tcg?.cents ?? (it.price ? Math.round(it.price * 100) : null);
+    const cents = market == null ? floor : Math.max(market, floor);
+    const graded = /^(psa|bgs|cgc|sgc|tag|beckett)/i.test(it.condition || "");
+    return {
+      key: ++bulkKey, on: true, photo,
+      type: it.type, game: it.game,
+      name: tcg ? `${tcg.name} ${tcg.number}`.trim() : it.number && !it.name.includes(it.number) ? `${it.name} ${it.number}` : it.name,
+      set_name: tcg?.setName || it.set, rarity: tcg?.rarity || "", foil: !!it.foil,
+      condition: it.type !== "single" ? "" : graded ? it.condition : "",
+      quantity: it.quantity || 1, price: cents ? (cents / 100).toFixed(2) : "",
+      tcg: tcg ? { categoryId: tcg.categoryId, groupId: tcg.groupId, productId: tcg.productId, subType: tcg.subType, name: tcg.name, number: tcg.number, setName: tcg.setName } : null,
+      market: tcg?.cents ?? null, readAs: tcg?.nameDiffers ? `${it.name}${it.number ? ` ${it.number}` : ""}` : "",
+    };
+  }
+
+  // Read up to 3 photos at a time.
+  useEffect(() => {
+    if (reading >= 3 || !queue.length) return;
+    const [next, ...rest] = queue;
+    setQueue(rest);
+    setReading(n => n + 1);
+    (async () => {
+      let photo = null;
+      try {
+        let forAi;
+        [forAi, photo] = await Promise.all([shrink(next.file, 1400), shrink(next.file, 900)]);
+        const r = await postJSON("/api/admin/read-photo", { image: forAi, mode: "add", match: true });
+        if (!r.items.length) throw new Error("No card found in this photo");
+        setRows(rs => [...rs, ...r.items.map(it => rowFrom(it, photo, it.tcg))]);
+      } catch (e) {
+        setRows(rs => [...rs, { key: ++bulkKey, on: true, photo, type: "single", game: prefs.game || "mtg", name: "", set_name: "", rarity: "", foil: false, condition: "", quantity: 1, price: "", tcg: null, error: e.message || "Couldn’t read this photo" }]);
+      }
+      setReading(n => n - 1);
+    })();
+  }, [queue, reading]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function onPick(e) {
+    const files = [...(e.target.files || [])];
+    e.target.value = "";
+    if (!files.length) return;
+    const room = BULK_MAX - rows.length - queue.length - reading;
+    if (files.length > room) setMsg(`Up to ${BULK_MAX} photos at a time — added the first ${Math.max(0, room)}. Add these, then pick the rest.`);
+    setQueue(q => [...q, ...files.slice(0, Math.max(0, room)).map(file => ({ key: ++bulkKey, file }))]);
+  }
+  const set = (key, patch) => setRows(rs => rs.map(r => (r.key === key ? { ...r, ...patch } : r)));
+  const chosen = rows.filter(r => r.on && r.name.trim());
+  const noPrice = chosen.filter(r => !(Number(r.price) > 0)).length;
+  const pending = queue.length + reading;
+
+  async function addAll() {
+    if (!chosen.length) return;
+    setBusy(`Adding 0 of ${chosen.length}…`); setMsg("");
+    try { localStorage.setItem(PREFS, JSON.stringify({ ...prefs, owner, condition: cond })); } catch {}
+    let done = 0;
+    const failed = [];
+    for (const r of chosen) {
+      try {
+        await postJSON("/api/admin/items", { action: "create", fields: {
+          type: r.type, game: r.game, owner, name: r.name.trim(), set_name: r.set_name, rarity: r.rarity, foil: r.foil,
+          condition: r.type === "single" ? r.condition || cond : "", quantity: r.quantity, price: r.price, cost: "", notes: "", photo: r.photo || "",
+        }, tcg: r.tcg ? { ...r.tcg, autoPrice: sync } : null });
+        done++;
+        setRows(rs => rs.filter(x => x.key !== r.key));
+      } catch (e) { failed.push(`${r.name}: ${e.message}`); }
+      setBusy(`Adding ${done} of ${chosen.length}…`);
+    }
+    setBusy("");
+    if (done) await onAdded(done);
+    if (failed.length) setMsg(`Couldn’t add ${failed.length}: ${failed.slice(0, 3).join(" · ")}`);
+    else if (!rows.length || done === chosen.length) onClose();
+  }
+
+  return (
+    <div className="add-panel bulk-panel">
+      <div className="add-panel-head">
+        <b>📚 Bulk add photos</b>
+        <button type="button" className="link-button" onClick={onClose} disabled={!!busy}>Close</button>
+      </div>
+      <p className="muted small">Pick up to {BULK_MAX} photos (one card per photo works best). Each one is read and looked up on TCGplayer for rarity and market price; your bulk minimums are applied. Check the list, then add them all.</p>
+      <div className="bulk-top">
+        <label className="btn">🖼 Pick photos<input type="file" accept="image/*" multiple onChange={onPick} hidden /></label>
+        <label className="btn btn-ghost-dark">📷 Camera<input type="file" accept="image/*" capture="environment" onChange={onPick} hidden /></label>
+      </div>
+      <div className="bulk-defaults">
+        <select className="input input-sm" value={owner} onChange={e => setOwner(e.target.value)} aria-label="Owner"><option value="">Owner…</option>{OWNERS.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}</select>
+        <select className="input input-sm" value={cond} onChange={e => setCond(e.target.value)} aria-label="Condition">{CONDITIONS.slice(0, 5).map(c => <option key={c} value={c}>{c}</option>)}</select>
+        <label className="check small"><input type="checkbox" checked={sync} onChange={e => setSync(e.target.checked)} /><span>Keep matched prices synced to TCGplayer daily</span></label>
+      </div>
+      {pending > 0 && <p className="small">Reading photos… {pending} to go{rows.length ? ` · ${rows.length} ready` : ""}</p>}
+
+      {rows.length > 0 && (
+        <ul className="bulk-list">
+          {rows.map(r => (
+            <li key={r.key} className={r.on ? "" : "off"}>
+              <label className="bulk-thumb">
+                <input type="checkbox" checked={r.on} onChange={e => set(r.key, { on: e.target.checked })} aria-label="Include" />
+                {r.photo ? <img src={r.photo} alt="" /> : <span>📷</span>}
+              </label>
+              <div className="bulk-fields">
+                {r.error && <p className="error small">{r.error} — type it in or untick it.</p>}
+                <input className="input input-sm" value={r.name} placeholder="Card name" onChange={e => set(r.key, { name: e.target.value })} aria-label="Name" />
+                <input className="input input-sm" value={r.set_name} placeholder="Set" onChange={e => set(r.key, { set_name: e.target.value })} aria-label="Set" />
+                <div className="inv-row">
+                  <select className="input input-sm" value={r.game} onChange={e => set(r.key, { game: e.target.value })} aria-label="Game">{GAMES.map(g => <option key={g.id} value={g.id}>{g.short || g.label}</option>)}</select>
+                  <input className="input input-sm bulk-cond" value={r.condition} placeholder={cond} onChange={e => set(r.key, { condition: e.target.value })} aria-label="Condition" />
+                </div>
+                {r.type === "single" && <RarityInput f={r} setF={next => set(r.key, next)} small />}
+                <div className="inv-row bulk-qp">
+                  <label className="small">Qty <input className="input input-sm num" type="number" min="1" value={r.quantity} onChange={e => set(r.key, { quantity: e.target.value })} /></label>
+                  <span className="money-input">$<input className="input input-sm num" type="text" inputMode="decimal" value={r.price} onChange={e => set(r.key, { price: e.target.value })} aria-label="Price" /></span>
+                </div>
+                <p className="muted small">
+                  {r.tcg ? <>TCGplayer ✓ {r.tcg.setName} #{r.tcg.number}{r.market != null ? ` · market ${money(r.market / 100)}` : ""}</> : r.error ? null : <span className="needs-photo">Not found on TCGplayer — check name, set and price</span>}
+                  {r.readAs && <> · photo read “{r.readAs}”</>}
+                  {!(Number(r.price) > 0) && <span className="needs-photo"> · needs a price</span>}
+                </p>
+              </div>
+              <button className="link-button bulk-x" onClick={() => setRows(rs => rs.filter(x => x.key !== r.key))} aria-label="Remove">✕</button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {msg && <p className="error small">{msg}</p>}
+      {rows.length > 0 && (
+        <button className="btn btn-block" disabled={!!busy || !chosen.length} onClick={addAll}>
+          {busy || `Add ${chosen.length} card${chosen.length === 1 ? "" : "s"} to inventory${noPrice ? ` (${noPrice} with no price stay hidden)` : ""}`}
+        </button>
+      )}
+    </div>
+  );
 }

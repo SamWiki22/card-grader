@@ -450,3 +450,18 @@
 .add-photo-wrap, .photo-box-wrap { display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
 .photo-lib { cursor: pointer; text-align: center; color: var(--teal-hi, var(--teal)); font-weight: 700; padding: 4px 0; }
 .inv-fromphotos { position: absolute; left: 50%; bottom: 52px; transform: translateX(-50%); z-index: 2; white-space: nowrap; cursor: pointer; font-size: 11px; font-weight: 700; color: var(--teal-hi, var(--teal)); padding: 4px 8px; max-width: calc(100% - 20px); overflow: hidden; text-overflow: ellipsis; border-radius: 999px; border: 1px solid rgba(79,195,182,.45); background: rgba(7,11,22,.85); }
+
+.bulk-top, .bulk-defaults { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
+.bulk-list { list-style: none; padding: 0; margin: 10px 0; display: flex; flex-direction: column; gap: 10px; }
+.bulk-list li { display: flex; gap: 10px; align-items: flex-start; padding: 10px; border: 1px solid var(--line, rgba(255,255,255,.12)); border-radius: 12px; position: relative; }
+.bulk-list li.off { opacity: .45; }
+.bulk-thumb { position: relative; flex: 0 0 92px; cursor: pointer; }
+.bulk-thumb img, .bulk-thumb > span { width: 92px; height: 128px; object-fit: cover; border-radius: 8px; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,.05); }
+.bulk-thumb input { position: absolute; top: 4px; left: 4px; width: 20px; height: 20px; z-index: 1; }
+.bulk-fields { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 6px; padding-right: 18px; }
+.bulk-fields .inv-row { display: flex; gap: 6px; }
+.bulk-fields .inv-row select { flex: 1 1 auto; min-width: 0; }
+.bulk-cond { flex: 0 0 70px; }
+.bulk-qp { align-items: center; justify-content: space-between; }
+.bulk-qp .num { width: 64px; }
+.bulk-x { position: absolute; top: 6px; right: 8px; font-size: 16px; }

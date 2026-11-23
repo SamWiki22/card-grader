@@ -48,7 +48,7 @@ and logins, the same project BB Inventory already uses), **Vercel** (hosting), a
    | `ADMIN_EMAILS` | your email (comma-separate several) |
    | `SHOP_ADDRESS` | where players mail cards they sell you, lines split with `|` (e.g. `Bearded Bear TCG \| 123 Main St \| City, ST 00000`) |
    | `CRON_SECRET` | any long random string (protects the daily TCGplayer price sync) |
-   | `FREE_SHIPPING_MIN` | `75` |
+   | `FREE_SHIPPING_MIN` | `50` |
    | `LOCAL_PICKUP` | `true` |
    | `CONTACT_EMAIL` | the shop's email |
    | `INSTAGRAM_URL` | your Instagram link (optional) |
@@ -207,13 +207,14 @@ To change a number, add the setting in Vercel (Settings → Environment Variable
 | Setting | Default | Meaning |
 |---|---|---|
 | `BULK_MAX_PRICE` | `2` | Singles under this many dollars count as bulk |
-| `BULK_MIN_ORDER` | `5` | Minimum dollars for a bulk-only order to ship |
-| `ENVELOPE_SHIPPING_CENTS` | `199` | Envelope price, in cents |
-| `ENVELOPE_MAX_CARDS` | `20` | Most cards in one envelope order |
+| `BULK_MIN_ORDER` | `3` | Minimum dollars for a bulk-only order to ship |
+| `ENVELOPE_SHIPPING_CENTS` | `119` | Envelope price, in cents |
+| `ENVELOPE_MAX_CARDS` | `10` | Most cards in one envelope order |
 | `SHIPPING_TRACKED` | `6.99` | Tracked mailer (singles, packs), in dollars |
 | `SHIPPING_BOX` | `12.99` | Tracked box, used when the order has a booster box / big sealed item |
 | `SHIPPING_VAULT` | `6.99` | Shipping vault cards on their own (taken from the player's balance) |
-| `FREE_SHIPPING_MIN` | `75` | Free tracked shipping at this many dollars |
+| `FREE_SHIPPING_MIN` | `50` | Free tracked shipping at this many dollars |
+| `ENVELOPE_MAX_ORDER` | `20` | Envelope offered on singles-only orders under this many dollars |
 | `PICKUP_LOCATION` | `Toyland Marketplace, Booth 11, Ontario` | Pickup name shown at checkout |
 | `PICKUP_ADDRESS` | `2401 S Vineyard Ave, Unit B, Ontario, CA 91761` | Pickup address shown in the cart and at checkout |
 | `LOCAL_PICKUP` | on | Set to `false` to turn pickup off |

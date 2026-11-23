@@ -18,13 +18,14 @@ const SCHEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["game", "type", "name", "set", "number", "condition", "quantity", "price", "notes"],
+        required: ["game", "type", "name", "set", "number", "condition", "quantity", "price", "foil", "notes"],
         properties: {
           game: { type: "string", enum: GAMES },
           type: { type: "string", enum: ["single", "box", "pack"] },
           name: str, set: str, number: str, condition: str,
           quantity: { type: "integer" },
           price: str,
+          foil: { type: "boolean" },
           notes: str,
         },
       },
@@ -41,7 +42,8 @@ const FIELDS = `For each item give:
 - condition: for a graded slab, the grader and grade (e.g. "PSA 10"); otherwise "" — don't guess raw condition
 - quantity: how many of this item (default 1)
 - price: a dollar amount only if one is written in the image (price sticker, or a message like "sold for $60"), digits only like "60.00", else ""
-- notes: anything useful (foil, signed, 1st edition, what a message said), else ""`;
+- foil: true only if the card clearly has a foil / holo / rainbow finish across the card, else false
+- notes: anything useful (signed, 1st edition, what a message said), else ""`;
 
 const PROMPTS = {
   add: `This photo shows an item a trading card shop is adding to inventory: usually one card (raw or in a graded slab) or one sealed product.
@@ -84,6 +86,7 @@ export async function readPhoto(dataUrl, mode = "add") {
     condition: String(it.condition || "").slice(0, 40),
     quantity: Math.max(1, Math.round(Number(it.quantity) || 1)),
     price: Number(String(it.price || "").replace(/[^0-9.]/g, "")) || null,
+    foil: !!it.foil,
     notes: String(it.notes || "").slice(0, 300),
   }));
 }

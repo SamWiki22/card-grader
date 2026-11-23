@@ -37,6 +37,14 @@ export function hasNumber(name) {
 export const withNumber = (name, number) => `${String(name).trim()} ${number}`;
 
 const sourcesFor = game => TCG_SOURCES.filter(s => s.game === game);
+const groupCacheAll = new Map();
+async function groupsCached(game) {
+  const hit = groupCacheAll.get(game);
+  if (hit && Date.now() - hit.at < HOURS_12) return hit.data;
+  const data = await groupsFor(game);
+  groupCacheAll.set(game, { at: Date.now(), data });
+  return data;
+}
 
 async function groupsFor(game) {
   const out = [];
@@ -163,4 +171,53 @@ export async function findNumbers(rows, { deadline = Date.now() + 8000, withRari
     }
   }
   return { found, choose, skipped, next: i, done: i >= rows.length };
+}
+
+// ── Match one card read from a photo to a TCGplayer product ─────────────────
+// card: { game, name, set, number, foil }. Returns null, or
+// { categoryId, groupId, productId, subType, name, number, rarity, setName, imageUrl, cents }.
+export async function matchCard(card) {
+  const game = card.game;
+  if (!sourcesFor(game).length || !card.name) return null;
+  const all = await groupsCached(game);
+  const number = String(card.number || "").trim();
+  const code = isCode(number) ? number.toUpperCase() : (String(card.name).match(CODE_IN_NAME)?.[1] || "").toUpperCase();
+  const nameBase = String(card.name).replace(CODE_IN_NAME, "").replace(NUM_IN_NAME, "");
+  let hits = [];
+
+  if (code) {
+    // Card codes (OP17-070, FB01-001, BT1-031) are unique across the game: search the sets with that prefix.
+    const prefix = squash(code.split("-")[0]);
+    let gs = all.filter(g => g.abbr && squash(g.abbr).startsWith(prefix));
+    if (!gs.length) gs = all.filter(g => setKey(g.name) === setKey(card.set));
+    for (const g of gs.slice(0, 12)) for (const p of await products(g.cat, g.groupId)) if (ext(p, "Number").toUpperCase() === code) hits.push({ p, g });
+  } else if (card.set) {
+    const want = norm(card.set);
+    let gs = all.filter(g => norm(g.name) === want || (g.abbr && norm(g.abbr) === want));
+    if (!gs.length) gs = all.filter(g => setKey(g.name) === setKey(card.set));
+    if (!gs.length) gs = all.filter(g => setKey(g.name).includes(setKey(card.set)) || setKey(card.set).includes(setKey(g.name))).slice(0, 4);
+    for (const g of gs) {
+      for (const p of await products(g.cat, g.groupId)) {
+        const sameNum = number && numKey(ext(p, "Number")) === numKey(number);
+        const sameName = base(p.name) === base(nameBase) || norm(p.name) === norm(nameBase);
+        // Set + collector number pins the card even if the name was misread or misspelled.
+        if (number ? sameNum : sameName) hits.push({ p, g });
+      }
+    }
+  }
+  if (!hits.length) return null;
+  // Prefer the exact name, then the plain (non-variant) printing, then the main set over promo/event sets.
+  const rank = h => (norm(h.p.name) === norm(nameBase) ? 0 : base(h.p.name) === base(nameBase) ? 1 : 2) * 10 + (isMainSet(h.g) ? 0 : 5) + (/\(/.test(h.p.name) ? 1 : 0);
+  hits.sort((a, b) => rank(a) - rank(b));
+  const { p, g } = hits[0];
+  const prices = (await get(`/${g.cat}/${g.groupId}/prices`)).filter(r => r.productId === p.productId);
+  const want = card.foil ? /foil|holo/i : /^normal$/i;
+  const row = prices.find(r => want.test(r.subTypeName || "")) || prices.find(r => !card.foil && !/foil|holo/i.test(r.subTypeName || "")) || prices[0];
+  const cents = row ? Math.round(Number(row.marketPrice ?? row.midPrice ?? row.lowPrice ?? 0) * 100) || null : null;
+  return {
+    categoryId: g.cat, groupId: g.groupId, productId: p.productId, subType: row?.subTypeName || "Normal",
+    name: p.name.replace(/\s+-\s+\S+$/, ""), number: ext(p, "Number"), rarity: ext(p, "Rarity"),
+    setName: g.name, imageUrl: p.imageUrl, cents, choices: hits.length,
+    nameDiffers: base(p.name) !== base(nameBase),
+  };
 }
