@@ -1,10 +1,11 @@
 // Shipping rules, shared by the cart page (to explain them) and checkout (to enforce them).
 //
 //  • Bulk = a single priced under the bulk line (default $2).
-//  • Orders that are ALL bulk singles: $5 minimum to ship, and a cheap untracked
-//    envelope option (default $1.99, up to 20 cards).
+//  • Orders that are ALL bulk singles: $3 minimum to ship.
+//  • Small singles-only orders (under $20, up to 10 cards) can go in an untracked
+//    envelope (default $1.19), like most card shops.
 //  • Anything else ships tracked in a mailer (default $6.99), or as a box when the
-//    order has a booster box / big sealed item (default $12.99). Free shipping at $75+.
+//    order has a booster box / big sealed item (default $12.99). Free shipping at $50+.
 //  • Vault cards (from virtual packs) ship for $6.99 on their own, or ride along
 //    in a website order's package for no extra charge.
 //  • Store pickup at Toyland Marketplace (Booth 11, Ontario) is always free and has no minimum.
@@ -13,13 +14,14 @@
 
 const DEFAULTS = {
   bulkMaxCents: 200,
-  minOrderCents: 500,
-  envelopeCents: 199,
-  envelopeMaxCards: 20,
+  minOrderCents: 300,
+  envelopeCents: 119,
+  envelopeMaxCards: 10,
+  envelopeMaxOrderCents: 2000,
   trackedCents: 699,
   boxCents: 1299,
   vaultCents: 699,
-  freeMinCents: 7500,
+  freeMinCents: 5000,
   pickup: true,
   pickupName: "Toyland Marketplace, Booth 11, Ontario",
   pickupAddress: "2401 S Vineyard Ave, Unit B, Ontario, CA 91761",
@@ -36,6 +38,7 @@ export function shippingConfig(env = process.env) {
     minOrderCents: pick(dollars(env.BULK_MIN_ORDER), DEFAULTS.minOrderCents),
     envelopeCents: pick(cents(env.ENVELOPE_SHIPPING_CENTS), DEFAULTS.envelopeCents),
     envelopeMaxCards: pick(cents(env.ENVELOPE_MAX_CARDS), DEFAULTS.envelopeMaxCards),
+    envelopeMaxOrderCents: pick(dollars(env.ENVELOPE_MAX_ORDER), DEFAULTS.envelopeMaxOrderCents),
     // Dollar amounts (e.g. 6.99). Older cent-based settings are no longer read.
     trackedCents: pick(dollars(env.SHIPPING_TRACKED), DEFAULTS.trackedCents),
     boxCents: pick(dollars(env.SHIPPING_BOX), DEFAULTS.boxCents),
@@ -62,7 +65,9 @@ export function shippingPlan(lines, cfg, { vaultCards = 0 } = {}) {
   if (!shortCents) {
     if (free) options.push({ id: "free", name: "Free tracked shipping", cents: 0 });
     else {
-      if (bulkOnly && !vaultCards && cards <= cfg.envelopeMaxCards) options.push({ id: "envelope", name: "Envelope (untracked)", cents: cfg.envelopeCents });
+      // Untracked envelope: small singles-only orders (like most card shops), never with vault cards.
+      const singlesOnly = lines.length > 0 && lines.every(l => l.type === "single");
+      if (singlesOnly && !vaultCards && cards <= cfg.envelopeMaxCards && subtotalCents < cfg.envelopeMaxOrderCents) options.push({ id: "envelope", name: "Envelope (untracked)", cents: cfg.envelopeCents });
       options.push(box ? { id: "tracked", name: "Tracked box shipping", cents: cfg.boxCents } : { id: "tracked", name: "Tracked shipping", cents: cfg.trackedCents });
     }
   }

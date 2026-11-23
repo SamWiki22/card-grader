@@ -1,6 +1,7 @@
 import { requireStaff } from "../../../lib/auth";
 import { db, selectAll } from "../../../lib/catalog";
 import { aiReady, readPhoto, matchInventory } from "../../../lib/ai";
+import { matchCard } from "../../../lib/numbers";
 
 export const config = { api: { bodyParser: { sizeLimit: "4mb" } } };
 
@@ -18,6 +19,11 @@ export default async function handler(req, res) {
   } catch (e) {
     console.error(e);
     return res.status(502).json({ error: e.message === "Unsupported image" ? "That file isn’t a photo we can read." : "Couldn’t read that photo — try a clearer one." });
+  }
+  // Bulk add: also look each single up on TCGplayer (rarity, market price, product link).
+  if (mode === "add" && req.body?.match) {
+    const matched = await Promise.all(items.map(it => (it.type === "single" ? matchCard(it).catch(() => null) : null)));
+    return res.json({ items: items.map((it, i) => ({ ...it, tcg: matched[i] })) });
   }
   if (mode === "add") return res.json({ items });
 
